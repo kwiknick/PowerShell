@@ -31,14 +31,16 @@ else
 }
 
 if ($IsLinux) {
-    $LinuxInfo = Get-Content /etc/os-release | ConvertFrom-StringData
+    $LinuxInfo = Get-Content /etc/os-release -Raw | ConvertFrom-StringData
 
     $IsUbuntu = $LinuxInfo.ID -match 'ubuntu'
     $IsUbuntu14 = $IsUbuntu -and $LinuxInfo.VERSION_ID -match '14.04'
     $IsUbuntu16 = $IsUbuntu -and $LinuxInfo.VERSION_ID -match '16.04'
     $IsCentOS = $LinuxInfo.ID -match 'centos' -and $LinuxInfo.VERSION_ID -match '7'
     $IsFedora = $LinuxInfo.ID -match 'fedora' -and $LinuxInfo.VERSION_ID -ge 24
-    $IsRedHatFamily = $IsCentOS -or $IsFedora
+    $IsOpenSUSE = $LinuxInfo.ID -match 'opensuse'
+    $IsOpenSUSE13 = $IsOpenSUSE -and $LinuxInfo.VERSION_ID  -match '13'
+    $IsRedHatFamily = $IsCentOS -or $IsFedora -or $IsOpenSUSE
 
     # Workaround for temporary LD_LIBRARY_PATH hack for Fedora 24
     # https://github.com/PowerShell/PowerShell/issues/2511
@@ -96,7 +98,8 @@ function Start-PSBuild {
                      "win81-x64",
                      "win10-x64",
                      "osx.10.11-x64",
-                     "osx.10.12-x64")]
+                     "osx.10.12-x64",
+                     "opensuse.13.2-x64")]
         [Parameter(ParameterSetName='CoreCLR')]
         [string]$Runtime,
 
@@ -458,7 +461,8 @@ function New-PSOptions {
                      "win81-x64",
                      "win10-x64",
                      "osx.10.11-x64",
-                     "osx.10.12-x64")]
+                     "osx.10.12-x64",
+                     "opensuse.13.2-x64")]
         [string]$Runtime,
 
         [switch]$Publish,
@@ -683,7 +687,8 @@ function Start-PSPester {
         [string]$powershell = (Join-Path $binDir 'powershell'),
         [string]$Pester = ([IO.Path]::Combine($binDir, "Modules", "Pester")),
         [switch]$Unelevate,
-        [switch]$Quiet
+        [switch]$Quiet,
+        [switch]$PassThru
     )
 
     # we need to do few checks and if user didn't provide $ExcludeTag explicitly, we should alternate the default
@@ -746,6 +751,9 @@ function Start-PSPester {
     # doing a daily build as the log file is too large
     if ( $Quiet ) {
         $Command += "-Quiet "
+    }
+    if ( $PassThru ) {
+        $Command += "-PassThru "
     }
 
     $Command += "'" + $Path + "'"
@@ -967,10 +975,12 @@ function Install-Dotnet {
 }
 
 function Get-RedHatPackageManager {
-    if ($IsRedHatFamily -and $IsCentOS) {
-        "yum"
-    } elseif ($IsRedHatFamily -and $IsFedora) {
-        "dnf"
+    if ($IsCentOS) {
+        "yum install -y -q"
+    } elseif ($IsFedora) {
+        "dnf install -y -q"
+    } elseif ($IsOpenSUSE) {
+        "zypper --non-interactive install"
     } else {
         throw "Error determining package manager for this distribution."
     }
@@ -1043,9 +1053,17 @@ function Start-PSBootstrap {
 
             $PackageManager = Get-RedHatPackageManager
 
+            $baseCommand = "$sudo $PackageManager"
+
+            # On OpenSUSE 13.2 container, sudo does not exist, so don't use it if not needed
+            if($NoSudo)
+            {
+                $baseCommand = $PackageManager
+            }
+
             # Install dependencies
             Start-NativeExecution {
-                Invoke-Expression "$sudo $PackageManager install -y -q $Deps"
+                Invoke-Expression "$baseCommand $Deps"
             }
         } elseif ($IsOSX) {
             precheck 'brew' "Bootstrap dependency 'brew' not found, must install Homebrew! See http://brew.sh/"
@@ -1465,7 +1483,7 @@ It consists of a cross-platform command-line shell and associated scripting lang
     if ($IsRedHatFamily) {
         # add two symbolic links to system shared libraries that libmi.so is dependent on to handle
         # platform specific changes. This is the only set of platforms needed for this currently
-        # as Ubuntu has these specific library files in the platform and OSX builds for itself 
+        # as Ubuntu has these specific library files in the platform and OSX builds for itself
         # against the correct versions.
         New-Item -Force -ItemType SymbolicLink -Target "/lib64/libssl.so.10" -Path "$Staging/libssl.so.1.0.0" >$null
         New-Item -Force -ItemType SymbolicLink -Target "/lib64/libcrypto.so.10" -Path "$Staging/libcrypto.so.1.0.0" >$null
@@ -1589,16 +1607,26 @@ esac
     } elseif ($IsRedHatFamily) {
         $Dependencies = @(
             "glibc",
-            "libcurl",
-            "libgcc",
             "libicu",
             "openssl",
-            "libstdc++",
-            "ncurses-base",
             "libunwind",
             "uuid",
             "zlib"
         )
+
+        if($IsFedora -or $IsCentOS)
+        {
+            $Dependencies += "libcurl"
+            $Dependencies += "libgcc"
+            $Dependencies += "libstdc++"
+            $Dependencies += "ncurses-base"
+        }
+
+        if($IsOpenSUSE)
+        {
+            $Dependencies += "libgcc_s1"
+            $Dependencies += "libstdc++6"
+        }
     }
 
     # iteration is "debian_revision"
@@ -1609,13 +1637,19 @@ esac
         $Iteration += "ubuntu1.16.04.1"
     }
 
-    # We currently only support CentOS 7 and Fedora 24+
-    # https://fedoraproject.org/wiki/Packaging:DistTag
+    # We currently only support:
+    # CentOS 7 
+    # Fedora 24+
+    # OpenSUSE 13.2
+    # Also SEE: https://fedoraproject.org/wiki/Packaging:DistTag
     if ($IsCentOS) {
         $rpm_dist = "el7.centos"
     } elseif ($IsFedora) {
         $version_id = $LinuxInfo.VERSION_ID
         $rpm_dist = "fedora.$version_id"
+    } elseif ($IsOpenSUSE13) {
+        $version_id = $LinuxInfo.VERSION_ID
+        $rpm_dist = "suse.$version_id"
     }
 
 
@@ -2632,7 +2666,8 @@ function Start-CrossGen {
                      "win81-x64",
                      "win10-x64",
                      "osx.10.11-x64",
-                     "osx.10.12-x64")]
+                     "osx.10.12-x64",
+                     "opensuse.13.2-x64")]
         [string]
         $Runtime
     )
