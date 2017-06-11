@@ -59,8 +59,8 @@
             : using a System.ComponentModel.TypeConverter
             : and then encoded with base64 encoding.
     -->
-  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
-    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+  <xsd:schema id="root" xmlns="" xmlns:xsd="https://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="https://www.w3.org/XML/1998/namespace" />
     <xsd:element name="root" msdata:IsDataSet="true">
       <xsd:complexType>
         <xsd:choice maxOccurs="unbounded">
@@ -177,7 +177,7 @@ Possible matches are</value>
   </data>
   <data name="AmbiguousParameterExtendMessage" xml:space="preserve">
     <value>
-	{0} ({1})</value>
+    {0} ({1})</value>
   </data>
   <data name="MissingExpression" xml:space="preserve">
     <value>Missing expression after '{0}' in pipeline element.</value>
@@ -445,9 +445,6 @@ Possible matches are</value>
   </data>
   <data name="InvalidEndOfLine" xml:space="preserve">
     <value>The token '{0}' is not a valid statement separator in this version.</value>
-  </data>
-  <data name="AmpersandNotAllowed" xml:space="preserve">
-    <value>The ampersand (&amp;) character is not allowed. The &amp; operator is reserved for future use; wrap an ampersand in double quotation marks ("&amp;") to pass it as part of a string.</value>
   </data>
   <data name="FromKeywordNotAllowed" xml:space="preserve">
     <value>The 'from' keyword is not supported in this version of the language.</value>
@@ -1347,9 +1344,6 @@ ModuleVersion : Version of module to import. If used, ModuleName must represent 
   </data>
   <data name="CantActivateDocumentInPowerShellCore" xml:space="preserve">
     <value>Cannot run a document in PowerShell Core: {0}.</value>
-  </data>
-  <data name="LoadContextNotInitialized" xml:space="preserve">
-    <value>'PowerShellAssemblyLoadContext' is not initialized.</value>
   </data>
   <data name="MultipleTypeConstraintsOnMethodParam" xml:space="preserve">
     <value>Multiple type constraints are not allowed on a method parameter.</value>

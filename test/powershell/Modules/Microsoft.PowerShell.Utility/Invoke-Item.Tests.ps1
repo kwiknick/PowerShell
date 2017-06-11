@@ -1,60 +1,78 @@
 using namespace System.Diagnostics
 
-Describe "Invoke-Item on non-Windows" -Tags "CI" {
-
-    function NewProcessStartInfo([string]$CommandLine, [switch]$RedirectStdIn)
-    {
-        return [ProcessStartInfo]@{
-            FileName               = $powershell
-            Arguments              = $CommandLine
-            RedirectStandardInput  = $RedirectStdIn
-            RedirectStandardOutput = $true
-            RedirectStandardError  = $true
-            UseShellExecute        = $false
-        }
-    }
-
-    function RunPowerShell([ProcessStartInfo]$debugfn)
-    {
-        $process = [Process]::Start($debugfn)
-        return $process
-    }
-
-    function EnsureChildHasExited([Process]$process, [int]$WaitTimeInMS = 15000)
-    {
-        $process.WaitForExit($WaitTimeInMS)
-
-        if (!$process.HasExited)
-        {
-            $process.HasExited | Should Be $true
-            $process.Kill()
-        }
-    }
-
+Describe "Invoke-Item basic tests" -Tags "CI" {
     BeforeAll {
-        $powershell = Join-Path -Path $PsHome -ChildPath "powershell"
-        Setup -File testfile.txt -Content "Hello World"
-        $testfile = Join-Path $TestDrive testfile.txt
+        $powershell = Join-Path $PSHOME -ChildPath powershell
+
+        $testFile1 = Join-Path -Path $TestDrive -ChildPath "text1.txt"
+        New-Item -Path $testFile1 -ItemType File -Force > $null
+
+        $testFolder = Join-Path -Path $TestDrive -ChildPath "My Folder"
+        New-Item -Path $testFolder -ItemType Directory -Force > $null
+        $testFile2 = Join-Path -Path $testFolder -ChildPath "text2.txt"
+        New-Item -Path $testFile2 -ItemType File -Force > $null
+
+        $textFileTestCases = @(
+            @{ TestFile = $testFile1 },
+            @{ TestFile = $testFile2 })
     }
 
-    It "Should invoke a text file without error on non-Windows" -Skip:($IsWindows) {
-        $debugfn = NewProcessStartInfo "-noprofile ""``Invoke-Item $testfile`n" -RedirectStdIn
-        $process = RunPowerShell $debugfn
-        EnsureChildHasExited $process
-        $process.ExitCode | Should Be 0
+    Context "Invoke a text file on Unix" {
+        BeforeEach {
+            $redirectErr = Join-Path -Path $TestDrive -ChildPath "error.txt"
+        }
+
+        AfterEach {
+            Remove-Item -Path $redirectErr -Force -ErrorAction SilentlyContinue
+        }
+
+        ## Run this test only on OSX because redirecting stderr of 'xdg-open' results in weird behavior in our Linux CI,
+        ## causing this test to fail or the build to hang.
+        It "Should invoke text file '<TestFile>' without error" -Skip:(!$IsOSX) -TestCases $textFileTestCases {
+            param($TestFile)
+
+            ## Redirect stderr to a file. So if 'open' failed to open the text file, an error
+            ## message from 'open' would be written to the redirection file.
+            $proc = Start-Process -FilePath $powershell -ArgumentList "-noprofile Invoke-Item '$TestFile'" `
+                                  -RedirectStandardError $redirectErr `
+                                  -PassThru
+            $proc.WaitForExit(3000) > $null
+            if (!$proc.HasExited) {
+                try { $proc.Kill() } catch { }
+            }
+            ## If the text file was successfully opened, the redirection file should be empty since no error
+            ## message was written to it.
+            Get-Content $redirectErr -Raw | Should BeNullOrEmpty
+        }
+    }
+
+    It "Should invoke an executable file without error" {
+        $executable = Get-Command "ping" -CommandType Application | ForEach-Object Source
+        $redirectFile = Join-Path -Path $TestDrive -ChildPath "redirect2.txt"
+
+        if ($IsWindows) {
+            ## 'ping.exe' on Windows writes out usage to stdout.
+            & $powershell "-noprofile" "Invoke-Item '$executable'" > $redirectFile
+        } else {
+            ## 'ping' on Unix write out usage to stderr
+            & $powershell "-noprofile" "Invoke-Item '$executable'" 2> $redirectFile
+        }
+        Get-Content $redirectFile -Raw | Should Match "usage: ping"
     }
 }
 
 Describe "Invoke-Item tests on Windows" -Tags "CI","RequireAdminOnWindows" {
     BeforeAll {
-        if ($IsWindows) {
+        $isNanoServer = [System.Management.Automation.Platform]::IsNanoServer
+        $isIot = [System.Management.Automation.Platform]::IsIoT
+        $isFullWin = $IsWindows -and !$isNanoServer -and !$isIot
+
+        if ($isFullWin) {
             $testfilename = "testfile.!!testext!!"
             $testfilepath = Join-Path $TestDrive $testfilename
             $renamedtestfilename = "renamedtestfile.!!testext!!"
             $renamedtestfilepath = Join-Path $TestDrive $renamedtestfilename
-            remove-item $testfilepath -ErrorAction SilentlyContinue
-            remove-item $renamedtestfilepath -ErrorAction SilentlyContinue
-            new-item $testfilepath | Out-Null
+
             cmd.exe /c assoc .!!testext!!=!!testext!!.FileType | Out-Null
             cmd.exe /c ftype !!testext!!.FileType=cmd.exe /c rename $testfilepath $renamedtestfilename | Out-Null
         }
@@ -62,14 +80,21 @@ Describe "Invoke-Item tests on Windows" -Tags "CI","RequireAdminOnWindows" {
 
     AfterAll {
         if ($IsWindows) {
-            remove-item $testfilepath -ErrorAction SilentlyContinue
-            remove-item $renamedtestfilepath -ErrorAction SilentlyContinue
             cmd.exe /c assoc !!testext!!=
             cmd.exe /c ftype !!testext!!.FileType=
         }
     }
 
-    It "Should invoke a file without error on Windows w/o .NET Core" -Skip:(-not $IsWindows -or ($IsWindows -and $IsCoreCLR)) {
+    BeforeEach {
+        New-Item $testfilepath -ItemType File | Out-Null
+    }
+
+    AfterEach {
+        Remove-Item $testfilepath -ErrorAction SilentlyContinue
+        Remove-Item $renamedtestfilepath -ErrorAction SilentlyContinue
+    }
+
+    It "Should invoke a file without error on Windows full SKUs" -Skip:(-not $isFullWin) {
         invoke-item $testfilepath
         # Waiting subprocess start and rename file
         {
@@ -82,7 +107,8 @@ Describe "Invoke-Item tests on Windows" -Tags "CI","RequireAdminOnWindows" {
         } | Should Not throw
     }
 
-    It "Should throw 'not supported' on Windows with .NET Core" -Skip:(-not ($IsWindows -and $IsCoreCLR)) {
-        { Invoke-Item $testfilepath } | Should Throw "Operation is not supported on this platform."
+    It "Should start a file without error on Windows full SKUs" -Skip:(-not $isFullWin) {
+        Start-Process $testfilepath -Wait
+        Test-Path $renamedtestfilepath | Should Be $true
     }
 }

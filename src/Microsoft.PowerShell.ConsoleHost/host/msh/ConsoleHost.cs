@@ -23,13 +23,6 @@ using System.Management.Automation.Security;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Management.Automation.Language;
-#if CORECLR
-using Microsoft.PowerShell.CoreClr.Stubs;
-// Some APIs are missing from System.Environment. We use System.Management.Automation.Environment as a proxy type:
-//  - for missing APIs, System.Management.Automation.Environment has extension implementation.
-//  - for existing APIs, System.Management.Automation.Environment redirect the call to System.Environment.
-using Environment = System.Management.Automation.Environment;
-#endif
 
 using Dbg = System.Management.Automation.Diagnostics;
 using ConsoleHandle = Microsoft.Win32.SafeHandles.SafeFileHandle;
@@ -263,6 +256,9 @@ namespace Microsoft.PowerShell
                     {
                         s_theConsoleHost.UI.WriteWarningLine(preStartWarning);
                     }
+
+                    // Send startup telemetry for ConsoleHost startup
+                    ApplicationInsightsTelemetry.SendPSCoreStartupTelemetry();
 
                     ClrFacade.StartProfileOptimization(
                         s_theConsoleHost.LoadPSReadline()
@@ -1083,8 +1079,8 @@ namespace Microsoft.PowerShell
             }
 #endif
 
-            ClrFacade.SetCurrentThreadUiCulture(this.CurrentUICulture);
-            ClrFacade.SetCurrentThreadCulture(this.CurrentCulture);
+            Thread.CurrentThread.CurrentUICulture = this.CurrentUICulture;
+            Thread.CurrentThread.CurrentCulture = this.CurrentCulture;
             // BUG: 610329. Tell PowerShell engine to apply console
             // related properties while launching Pipeline Execution
             // Thread.
@@ -1398,6 +1394,7 @@ namespace Microsoft.PowerShell
                 ui.ThrowOnReadAndPrompt = cpp.ThrowOnReadAndPrompt;
                 _noExit = cpp.NoExit;
 
+#if !UNIX
                 // See if we need to change the process-wide execution
                 // policy
                 if (!String.IsNullOrEmpty(cpp.ExecutionPolicy))
@@ -1405,6 +1402,7 @@ namespace Microsoft.PowerShell
                     ExecutionPolicy executionPolicy = SecuritySupport.ParseExecutionPolicy(cpp.ExecutionPolicy);
                     SecuritySupport.SetExecutionPolicy(ExecutionPolicyScope.Process, executionPolicy, null);
                 }
+#endif
 
                 // NTRAID#Windows Out Of Band Releases-915506-2005/09/09
                 // Removed HandleUnexpectedExceptions infrastructure

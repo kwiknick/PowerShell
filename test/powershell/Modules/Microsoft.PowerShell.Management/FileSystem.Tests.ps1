@@ -1,4 +1,3 @@
-Import-Module $PSScriptRoot\..\..\Common\Test.Helpers.psm1
 Describe "Basic FileSystem Provider Tests" -Tags "CI" {
     BeforeAll {
         $testDir = "TestDir"
@@ -243,6 +242,465 @@ Describe "Basic FileSystem Provider Tests" -Tags "CI" {
             $tildePath = (Resolve-Path -Path ~).Path
             $homePath | Should Be $tildePath
         }
+    }
+}
+
+Describe "Handling of globbing patterns" -Tags "CI" {
+
+    Context "Handling of Unix [ab] globbing patterns in literal paths" {
+        BeforeAll {
+            $filePath = Join-Path $TESTDRIVE "file[txt].txt"
+            $newPath = Join-Path $TESTDRIVE "file.txt.txt"
+            $dirPath = Join-Path $TESTDRIVE "subdir"
+        }
+        BeforeEach {
+            $file = New-Item -ItemType File -Path $filePath -Force
+        }
+        AfterEach
+        {
+            Remove-Item -Force -Recurse -Path $dirPath -ErrorAction SilentlyContinue
+            Remove-Item -Force -LiteralPath $newPath -ErrorAction SilentlyContinue
+        }
+
+        It "Rename-Item -LiteralPath can rename a file with Unix globbing characters" {
+            Rename-Item -LiteralPath $file.FullName -NewName $newPath
+            Test-Path -LiteralPath $file.FullName | Should Be $false
+            Test-Path -LiteralPath $newPath | Should Be $true
+        }
+
+        It "Remove-Item -LiteralPath can delete a file with Unix globbing characters" {
+            Remove-Item -LiteralPath $file.FullName
+            Test-Path -LiteralPath $file.FullName | Should Be $false
+        }
+
+        It "Move-Item -LiteralPath can move a file with Unix globbing characters" {
+            $dir = New-Item -ItemType Directory -Path $dirPath
+            Move-Item -LiteralPath $file.FullName -Destination $dir.FullName
+            Test-Path -LiteralPath $file.FullName | Should Be $false
+            $newPath = Join-Path $dir.FullName $file.Name
+            Test-Path -LiteralPath $newPath | Should Be $true
+        }
+
+        It "Copy-Item -LiteralPath can copy a file with Unix globbing characters" {
+            Copy-Item -LiteralPath $file.FullName -Destination $newPath
+            Test-Path -LiteralPath $newPath | Should Be $true
+        }
+    }
+}
+
+Describe "Hard link and symbolic link tests" -Tags "CI", "RequireAdminOnWindows" {
+    BeforeAll {
+        # on macOS, the /tmp directory is a symlink, so we'll resolve it here
+        $TestPath = $TestDrive
+        if ($IsOSX)
+        {
+            $item = Get-Item $TestPath
+            $dirName = $item.BaseName
+            $item = Get-Item $item.PSParentPath
+            if ($item.LinkType -eq "SymbolicLink")
+            {
+                $TestPath = Join-Path $item.Target $dirName
+            }
+        }
+
+        $realFile = Join-Path $TestPath "file.txt"
+        $nonFile = Join-Path $TestPath "not-a-file"
+        $fileContent = "some text"
+        $realDir = Join-Path $TestPath "subdir"
+        $nonDir = Join-Path $TestPath "not-a-dir"
+        $hardLinkToFile = Join-Path $TestPath "hard-to-file.txt"
+        $symLinkToFile = Join-Path $TestPath "sym-link-to-file.txt"
+        $symLinkToDir = Join-Path $TestPath "sym-link-to-dir"
+        $symLinkToNothing = Join-Path $TestPath "sym-link-to-nowhere"
+        $dirSymLinkToDir = Join-Path $TestPath "symd-link-to-dir"
+        $junctionToDir = Join-Path $TestPath "junction-to-dir"
+
+        New-Item -ItemType File -Path $realFile -Value $fileContent >$null
+        New-Item -ItemType Directory -Path $realDir >$null
+    }
+
+    Context "New-Item and hard/symbolic links" {
+        It "New-Item can create a hard link to a file" {
+            New-Item -ItemType HardLink -Path $hardLinkToFile -Value $realFile
+            Test-Path $hardLinkToFile | Should Be $true
+            $link = Get-Item -Path $hardLinkToFile
+            $link.LinkType | Should BeExactly "HardLink"
+            Get-Content -Path $hardLinkToFile | Should be $fileContent
+        }
+        It "New-Item can create symbolic link to file" {
+            New-Item -ItemType SymbolicLink -Path $symLinkToFile -Value $realFile
+            Test-Path $symLinkToFile | Should Be $true
+            $real = Get-Item -Path $realFile
+            $link = Get-Item -Path $symLinkToFile
+            $link.LinkType | Should BeExactly "SymbolicLink"
+            $link.Target | Should Be $real.FullName
+            Get-Content -Path $symLinkToFile | Should be $fileContent
+        }
+        It "New-Item can create a symbolic link to nothing" {
+            New-Item -ItemType SymbolicLink -Path $symLinkToNothing -Value $nonFile
+            Test-Path $symLinkToNothing | Should Be $true
+            $link = Get-Item -Path $symLinkToNothing
+            $link.LinkType | Should BeExactly "SymbolicLink"
+            $link.Target | Should Be $nonFile
+        }
+        It "New-Item emits an error when path to symbolic link already exists." {
+            { New-Item -ItemType SymbolicLink -Path $realDir -Value $symLinkToDir -ErrorAction Stop } | ShouldBeErrorId "SymLinkExists,Microsoft.PowerShell.Commands.NewItemCommand"
+        }
+        It "New-Item can create a symbolic link to a directory" -Skip:($IsWindows) {
+            New-Item -ItemType SymbolicLink -Path $symLinkToDir -Value $realDir
+            Test-Path $symLinkToDir | Should Be $true
+            $real = Get-Item -Path $realDir
+            $link = Get-Item -Path $symLinkToDir
+            $link.LinkType | Should BeExactly "SymbolicLink"
+            $link.Target | Should Be $real.FullName
+        }
+        It "New-Item can create a directory symbolic link to a directory" -Skip:(-Not $IsWindows) {
+            New-Item -ItemType SymbolicLink -Path $symLinkToDir -Value $realDir
+            Test-Path $symLinkToDir | Should Be $true
+            $real = Get-Item -Path $realDir
+            $link = Get-Item -Path $symLinkToDir
+            $link | Should BeOfType System.IO.DirectoryInfo
+            $link.LinkType | Should BeExactly "SymbolicLink"
+            $link.Target | Should Be $real.FullName
+        }
+        It "New-Item can create a directory junction to a directory" -Skip:(-Not $IsWindows) {
+            New-Item -ItemType Junction -Path $junctionToDir -Value $realDir
+            Test-Path $junctionToDir | Should Be $true
+        }
+    }
+
+    Context "Get-ChildItem and symbolic links" {
+        BeforeAll {
+            $TestDrive = "TestDrive:"
+            $alphaDir = Join-Path $TestDrive "sub-alpha"
+            $alphaLink = Join-Path $TestDrive "link-alpha"
+            $alphaFile1 = Join-Path $alphaDir "AlphaFile1.txt"
+            $alphaFile2 = Join-Path $alphaDir "AlphaFile2.txt"
+            $betaDir = Join-Path $alphaDir "sub-beta"
+            $betaLink = Join-Path $alphaDir "link-beta"
+            $betaFile1 = Join-Path $betaDir "BetaFile1.txt"
+            $betaFile2 = Join-Path $betaDir "BetaFile2.txt"
+            $betaFile3 = Join-Path $betaDir "BetaFile3.txt"
+
+            New-Item -ItemType Directory -Path $alphaDir
+            New-Item -ItemType File -Path $alphaFile1
+            New-Item -ItemType File -Path $alphaFile2
+            New-Item -ItemType Directory -Path $betaDir
+            New-Item -ItemType File -Path $betaFile1
+            New-Item -ItemType File -Path $betaFile2
+            New-Item -ItemType File -Path $betaFile3
+        }
+        AfterAll {
+            Remove-Item -Path $alphaLink -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $betaLink -Force -ErrorAction SilentlyContinue
+        }
+
+        It "Get-ChildItem gets content of linked-to directory" {
+            $filenamePattern = "AlphaFile[12]\.txt"
+            New-Item -ItemType SymbolicLink -Path $alphaLink -Value $alphaDir
+            $ci = Get-ChildItem $alphaLink
+            $ci.Count | Should BeExactly 3
+            $ci[1].Name | Should MatchExactly $filenamePattern
+            $ci[2].Name | Should MatchExactly $filenamePattern
+        }
+        It "Get-ChildItem does not recurse into symbolic links not explicitly given on the command line" {
+            New-Item -ItemType SymbolicLink -Path $betaLink -Value $betaDir
+            $ci = Get-ChildItem $alphaLink -Recurse
+            $ci.Count | Should BeExactly 7
+        }
+    }
+
+    Context "Remove-Item and hard/symbolic links" {
+        BeforeAll {
+            $testCases = @(
+                @{
+                    Name = "Remove-Item can remove a hard link to a file"
+                    Link = $hardLinkToFile
+                    Target = $realFile
+                }
+                @{
+                    Name = "Remove-Item can remove a symbolic link to a file"
+                    Link = $symLinkToFile
+                    Target = $realFile
+                }
+            )
+
+            # New-Item on Windows will not create a "plain" symlink to a directory
+            $unixTestCases = @(
+                @{
+                    Name = "Remove-Item can remove a symbolic link to a directory on Unix"
+                    Link = $symLinkToDir
+                    Target = $realDir
+                }
+            )
+
+            # Junctions and directory symbolic links are Windows and NTFS only
+            $windowsTestCases = @(
+                @{
+                    Name = "Remove-Item can remove a symbolic link to a directory on Windows"
+                    Link = $symLinkToDir
+                    Target = $realDir
+                }
+                @{
+                    Name = "Remove-Item can remove a directory symbolic link to a directory on Windows"
+                    Link = $dirSymLinkToDir
+                    Target = $realDir
+                }
+                @{
+                    Name = "Remove-Item can remove a junction to a directory"
+                    Link = $junctionToDir
+                    Target = $realDir
+                }
+            )
+
+            function TestRemoveItem
+            {
+                Param (
+                    [string]$Link,
+                    [string]$Target
+                )
+
+                Remove-Item -Path $Link -ErrorAction SilentlyContinue >$null
+                Test-Path -Path $Link | Should Be $false
+                Test-Path -Path $Target | Should Be $true
+            }
+        }
+
+        It "<Name>" -TestCases $testCases {
+            Param (
+                [string]$Name,
+                [string]$Link,
+                [string]$Target
+            )
+
+            TestRemoveItem $Link $Target
+        }
+
+        It "<Name>" -TestCases $unixTestCases -Skip:($IsWindows) {
+            Param (
+                [string]$Name,
+                [string]$Link,
+                [string]$Target
+            )
+
+            TestRemoveItem $Link $Target
+        }
+
+        It "<Name>" -TestCases $windowsTestCases -Skip:(-not $IsWindows) {
+            Param (
+                [string]$Name,
+                [string]$Link,
+                [string]$Target
+            )
+
+            TestRemoveItem $Link $Target
+        }
+
+        It "Remove-Item ignores -Recurse switch when deleting symlink to directory" {
+            $folder = Join-Path $TestDrive "folder"
+            $file = Join-Path $TestDrive "folder" "file"
+            $link = Join-Path $TestDrive "sym-to-folder"
+            New-Item -ItemType Directory -Path $folder >$null
+            New-Item -ItemType File -Path $file -Value "some content" >$null
+            New-Item -ItemType SymbolicLink -Path $link -value $folder >$null
+            $childA = Get-Childitem $folder
+            Remove-Item -Path $link -Recurse
+            $childB = Get-ChildItem $folder
+            $childB.Count | Should Be 1
+            $childB.Count | Should BeExactly $childA.Count
+            $childB.Name | Should BeExactly $childA.Name
+        }
+    }
+}
+
+Describe "Copy-Item can avoid copying an item onto itself" -Tags "CI", "RequireAdminOnWindows" {
+    BeforeAll {
+        # For now, we'll assume the tests are running the platform's
+        # native filesystem, in its default mode
+        $isCaseSensitive = $IsLinux
+
+        # The name of the key in an exception's Data dictionary when an
+        # attempt is made to copy an item onto itself.
+        $selfCopyKey = "SelfCopy"
+
+        $TestDrive = "TestDrive:"
+        $subDir = "$TestDrive/sub"
+        $otherSubDir = "$TestDrive/other-sub"
+        $fileName = "file.txt"
+        $filePath = "$TestDrive/$fileName"
+        $otherFileName = "other-file"
+        $otherFile = "$otherSubDir/$otherFileName"
+        $symToOther = "$subDir/sym-to-other"
+        $secondSymToOther = "$subDir/another-sym-to-other"
+        $symToSym = "$subDir/sym-to-sym-to-other"
+        $symToOtherFile = "$subDir/sym-to-other-file"
+        $hardToOtherFile = "$subDir/hard-to-other-file"
+        $symdToOther = "$subDir/symd-to-other"
+        $junctionToOther = "$subDir/junction-to-other"
+
+        New-Item -ItemType File $filePath -Value "stuff" >$null
+        New-Item -ItemType Directory $subDir >$null
+        New-Item -ItemType Directory $otherSubDir >$null
+        New-Item -ItemType File $otherFile -Value "some text" >$null
+        New-Item -ItemType SymbolicLink $symToOther -Value $otherSubDir >$null
+        New-Item -ItemType SymbolicLink $secondSymToOther -Value $otherSubDir >$null
+        New-Item -ItemType SymbolicLink $symToSym -Value $symToOther >$null
+        New-Item -ItemType SymbolicLink $symToOtherFile -Value $otherFile >$null
+        New-Item -ItemType HardLink $hardToOtherFile -Value $otherFile >$null
+
+        if ($IsWindows)
+        {
+            New-Item -ItemType Junction $junctionToOther -Value $otherSubDir >$null
+            New-Item -ItemType SymbolicLink $symdToOther -Value $otherSubDir >$null
+        }
+    }
+
+    Context "Copy-Item using different case (on case-sensitive file systems)" {
+        BeforeEach {
+            $sourcePath = $filePath
+            $destinationPath = "$TestDrive/" + $fileName.Toupper()
+        }
+        AfterEach {
+            Remove-Item -Path $destinationPath -ErrorAction SilentlyContinue
+        }
+
+        It "Copy-Item can copy to file name differing only by case" {
+            if ($isCaseSensitive)
+            {
+                Copy-Item -Path $sourcePath -Destination $destinationPath -ErrorAction SilentlyContinue | Should Be $null
+                Test-Path -Path $destinationPath | Should Be $true
+            }
+            else
+            {
+                { Copy-Item -Path $sourcePath -Destination $destinationPath -ErrorAction Stop } | ShouldBeErrorId "CopyError,Microsoft.PowerShell.Commands.CopyItemCommand"
+                $Error[0].Exception | Should BeOfType System.IO.IOException
+                $Error[0].Exception.Data[$selfCopyKey] | Should Not Be $null
+            }
+        }
+    }
+
+    Context "Copy-Item avoids copying an item onto itself" {
+        BeforeAll {
+            $testCases = @(
+                @{
+                    Name = "Copy to same path"
+                    Source = $otherFile
+                    Destination = $otherFile
+                }
+                @{
+                    Name = "Copy hard link"
+                    Source = $hardToOtherFile
+                    Destination = $otherFile
+                }
+                @{
+                    Name = "Copy hard link, reversed"
+                    Source = $otherFile
+                    Destination = $hardToOtherFile
+                }
+                @{
+                    Name = "Copy symbolic link to target"
+                    Source = $symToOtherFile
+                    Destination = $otherFile
+                }
+                @{
+                    Name = "Copy symbolic link to symbolic link with same target"
+                    Source = $secondSymToOther
+                    Destination = $symToOther
+                }
+                @{
+                    Name = "Copy through chain of symbolic links"
+                    Source = $symToSym
+                    Destination = $otherSubDir
+                }
+            )
+
+            # Junctions and directory symbolic links are Windows and NTFS only
+            $windowsTestCases = @(
+                @{
+                    Name = "Copy junction to target"
+                    Source = $junctionToOther
+                    Destination = $otherSubDir
+                }
+                @{
+                    Name = "Copy directory symbolic link to target"
+                    Source = $symdToOther
+                    Destination = $otherSubDir
+                }
+            )
+
+            function TestSelfCopy
+            {
+                Param (
+                    [string]$Source,
+                    [string]$Destination
+                )
+
+                { Copy-Item -Path $Source -Destination $Destination -ErrorAction Stop } | ShouldBeErrorId "CopyError,Microsoft.PowerShell.Commands.CopyItemCommand"
+                $Error[0].Exception | Should BeOfType System.IO.IOException
+                $Error[0].Exception.Data[$selfCopyKey] | Should Not Be $null
+            }
+        }
+
+        It "<Name>" -TestCases $testCases {
+            Param (
+                [string]$Name,
+                [string]$Source,
+                [string]$Destination
+            )
+
+            TestSelfCopy $Source $Destination
+        }
+
+        It "<Name>" -TestCases $windowsTestCases -Skip:(-not $IsWindows) {
+            Param (
+                [string]$Name,
+                [string]$Source,
+                [string]$Destination
+            )
+
+            TestSelfCopy $Source $Destination
+        }
+    }
+}
+
+Describe "Handling long paths" -Tags "CI" {
+    BeforeAll {
+        $longDir = 'a' * 250
+        $longSubDir = 'b' * 250
+        $fileName = "file1.txt"
+        $topPath = Join-Path $TestDrive $longDir
+        $longDirPath = Join-Path $topPath $longSubDir
+        $longFilePath = Join-Path $longDirPath $fileName
+        $cwd = Get-Location
+    }
+    BeforeEach {
+        New-Item -ItemType File -Path $longFilePath -Force | Out-Null
+    }
+    AfterEach {
+        Remove-Item -Path $topPath -Force -Recurse -ErrorAction SilentlyContinue
+        Set-Location $cwd
+    }
+
+    It "Can remove a file via a long path" {
+        Remove-Item -Path $longFilePath -ErrorVariable e -ErrorAction SilentlyContinue
+        $e | Should BeNullOrEmpty
+        $longFilePath | Should Not Exist
+    }
+    It "Can rename a file via a long path" {
+        $newFileName = "new-file.txt"
+        $newPath = Join-Path $longDirPath $newFileName
+        Rename-Item -Path $longFilePath -NewName $newFileName
+        $longFilePath | Should Not Exist
+        $newPath | Should Exist
+    }
+    It "Can change into a directory via a long path" {
+        Set-Location -Path $longDirPath -ErrorVariable e -ErrorAction SilentlyContinue
+        $e | Should BeNullOrEmpty
+        $c = Get-Location
+        $fileName | Should Exist
+    }
+    It "Can use Test-Path to check for a file via a long path" {
+        Test-Path $longFilePath | Should Be $true
     }
 }
 
@@ -569,6 +1027,7 @@ Describe "Extended FileSystem Path/Location Cmdlet Provider Tests" -Tags "Featur
         $level1_0 = "Level1_0"
         $level2_0 = "Level2_0"
         $level2_1 = "Level2_1"
+        $fileExt = ".ext"
         $root = Join-Path "TestDrive:" "" #adds correct / or \
         $level1_0Full = Join-Path $root $level1_0
         $level2_0Full = Join-Path $level1_0Full $level2_0
@@ -627,6 +1086,21 @@ Describe "Extended FileSystem Path/Location Cmdlet Provider Tests" -Tags "Featur
         It "Validate Leaf" {
             $result = Split-Path -Path $level1_0Full -Leaf
             $result | Should Be $level1_0
+        }
+
+        It 'Validate LeafBase' {
+            $result = Split-Path -Path "$level2_1Full$fileExt" -LeafBase
+            $result | Should Be $level2_1
+        }
+        It 'Validate LeafBase is not over-zealous' {
+
+            $result = Split-Path -Path "$level2_1Full$fileExt$fileExt" -LeafBase
+            $result | Should Be "$level2_1$fileExt"
+        }
+
+        It 'Validate LeafBase' {
+            $result = Split-Path -Path "$level2_1Full$fileExt" -Extension
+            $result | Should Be $fileExt
         }
 
         It "Validate NoQualifier" {

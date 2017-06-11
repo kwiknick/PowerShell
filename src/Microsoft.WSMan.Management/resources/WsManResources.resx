@@ -59,8 +59,8 @@
             : using a System.ComponentModel.TypeConverter
             : and then encoded with base64 encoding.
     -->
-  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
-    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+  <xsd:schema id="root" xmlns="" xmlns:xsd="https://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="https://www.w3.org/XML/1998/namespace" />
     <xsd:element name="root" msdata:IsDataSet="true">
       <xsd:complexType>
         <xsd:choice maxOccurs="unbounded">
@@ -221,11 +221,11 @@ Do you want to enable CredSSP authentication?</value>
   <data name="QuickConfigContinueQuery" xml:space="preserve">
     <value>Running the Set-WSManQuickConfig command has significant security implications, as it enables remote management through the WinRM service on this computer.
 This command:
-	1. Checks whether the WinRM service is running. If the WinRM service is not running, the service is started.
-	2. Sets the WinRM service startup type to automatic.
-	3. Creates a listener to accept requests on any IP address. By default, the transport is HTTP.
-	4. Enables a firewall exception for WS-Management traffic.
-	5. Enables Kerberos and Negotiate service authentication.
+    1. Checks whether the WinRM service is running. If the WinRM service is not running, the service is started.
+    2. Sets the WinRM service startup type to automatic.
+    3. Creates a listener to accept requests on any IP address. By default, the transport is HTTP.
+    4. Enables a firewall exception for WS-Management traffic.
+    5. Enables Kerberos and Negotiate service authentication.
 Do you want to enable remote management through the WinRM service on this computer?</value>
   </data>
   <data name="SetItemOnRunAsPasswordNoRunAsUser" xml:space="preserve">

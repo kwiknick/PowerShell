@@ -59,8 +59,8 @@
             : using a System.ComponentModel.TypeConverter
             : and then encoded with base64 encoding.
     -->
-  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
-    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+  <xsd:schema id="root" xmlns="" xmlns:xsd="https://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="https://www.w3.org/XML/1998/namespace" />
     <xsd:element name="root" msdata:IsDataSet="true">
       <xsd:complexType>
         <xsd:choice maxOccurs="unbounded">
@@ -118,16 +118,16 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="ShellBanner" xml:space="preserve">
-    <value>Windows PowerShell 
+    <value>Windows PowerShell {0}
 Copyright (C) Microsoft Corporation. All rights reserved.</value>
   </data>
   <data name="ShellBannerNonWindowsPowerShell" xml:space="preserve">
-    <value>PowerShell 
+    <value>PowerShell {0}
 Copyright (C) Microsoft Corporation. All rights reserved.</value>
   </data>
   <data name="ShellHelp" xml:space="preserve">
     <value>PowerShell[.exe] [-PSConsoleFile &lt;file&gt; | -Version &lt;version&gt;]
-    [-NoLogo] [-NoExit] [-Sta] [-Mta] [-NoProfile] [-NonInteractive]
+    [-NoLogo] [-NoExit] [-Sta] [-Mta] [-NoProfile] [-NonInteractive] [-Interactive]
     [-InputFormat {Text | XML}] [-OutputFormat {Text | XML}]
     [-WindowStyle &lt;style&gt;] [-EncodedCommand &lt;Base64EncodedCommand&gt;]
     [-ConfigurationName &lt;string&gt;]
@@ -163,6 +163,9 @@ PowerShell[.exe] -Help | -? | /?
 
 -NonInteractive
     Does not present an interactive prompt to the user.
+
+-Interactive
+    Present an interactive prompt to the user.
 
 -InputFormat
     Describes the format of data sent to Windows PowerShell. Valid values are
@@ -219,7 +222,7 @@ PowerShell[.exe] -Help | -? | /?
     interpreted as the command arguments.
 
     To write a string that runs a Windows PowerShell command, use the format:
-	"&amp; {&lt;command&gt;}"
+    "&amp; {&lt;command&gt;}"
     where the quotation marks indicate a string and the invoke operator (&amp;)
     causes the command to be executed.
 

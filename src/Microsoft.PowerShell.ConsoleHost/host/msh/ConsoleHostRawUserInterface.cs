@@ -1745,10 +1745,10 @@ namespace Microsoft.PowerShell
         /// from the keyboard device, blocking processing until a keystroke is
         /// typed that matches the specified keystroke options.
         /// </summary>
-        /// <param name="options">Unused</param>
+        /// <param name="options">Only NoEcho is supported.</param>
         public override KeyInfo ReadKey(ReadKeyOptions options)
         {
-            ConsoleKeyInfo key = Console.ReadKey();
+            ConsoleKeyInfo key = Console.ReadKey((options & ReadKeyOptions.NoEcho) != 0);
             return new KeyInfo((int)key.Key, key.KeyChar, new ControlKeyStates(), true);
         }
 
@@ -1805,14 +1805,11 @@ namespace Microsoft.PowerShell
                 //if x is exceeding buffer width, reset to the next line
                 if (origin.X >= BufferSize.Width)
                 {
-                    origin.X = 1;
+                    origin.X = 0;
                 }
 
                 //write the character from contents
                 Console.Out.Write(charitem.Character);
-
-                //advance the character one position
-                origin.X++;
             }
 
             //reset the cursor to the original position

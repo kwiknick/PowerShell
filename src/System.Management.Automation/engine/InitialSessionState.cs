@@ -3937,7 +3937,8 @@ namespace System.Management.Automation.Runspaces
 
             if (errors.Count > 0)
             {
-                var allErrors = new StringBuilder('\n');
+                var allErrors = new StringBuilder();
+                allErrors.Append('\n');
                 foreach (string error in errors)
                 {
                     if (!string.IsNullOrEmpty(error))
@@ -4466,7 +4467,7 @@ namespace System.Management.Automation.Runspaces
         {
             s_PSSnapInTracer.WriteLine("Loading assembly for psSnapIn {0}", fileName);
 
-            Assembly assembly = ClrFacade.LoadFrom(fileName);
+            Assembly assembly = Assembly.LoadFrom(fileName);
             if (assembly == null)
             {
                 s_PSSnapInTracer.TraceError("Loading assembly for psSnapIn {0} failed", fileName);
@@ -5053,8 +5054,6 @@ end
                         "Get-Process",     "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("group",
                         "Group-Object",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
-                    new SessionStateAliasEntry("gsv",
-                        "Get-Service",     "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("gu",
                         "Get-Unique",      "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("gv",
@@ -5109,8 +5108,6 @@ end
                         "Resolve-Path",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("sal",
                         "Set-Alias",       "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
-                    new SessionStateAliasEntry("sasv",
-                        "Start-Service",   "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("sbp",
                         "Set-PSBreakpoint",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("sc",
@@ -5130,8 +5127,6 @@ end
                         "Start-Process",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("spps",
                         "Stop-Process",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
-                    new SessionStateAliasEntry("spsv",
-                        "Stop-Service",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("sv",
                         "Set-Variable",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     // Web cmdlets aliases
@@ -5150,12 +5145,18 @@ end
                         "Copy-ItemProperty",   "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("diff",
                         "Compare-Object",  "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
+                    new SessionStateAliasEntry("gsv",
+                        "Get-Service",  "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("sleep",
                         "Start-Sleep",     "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("sort",
                         "Sort-Object",     "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("start",
                         "Start-Process",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
+                    new SessionStateAliasEntry("sasv",
+                        "Start-Service",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
+                    new SessionStateAliasEntry("spsv",
+                        "Stop-Service",    "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("tee",
                         "Tee-Object",      "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("write",
@@ -5306,7 +5307,7 @@ end
                         "Receive-PSSession",   "", ScopedItemOptions.ReadOnly | ScopedItemOptions.AllScope),
                     new SessionStateAliasEntry("exsn",
                         "Exit-PSSession",  "", ScopedItemOptions.AllScope),
-                    // Win8: 121662/169179	Add "sls" alias for Select-String cmdlet
+                    // Win8: 121662/169179  Add "sls" alias for Select-String cmdlet
                     //   - do not use AllScope - this causes errors in profiles that set this somewhat commonly used alias.
                     new SessionStateAliasEntry("sls",
                         "Select-String", "", ScopedItemOptions.None),
@@ -5542,7 +5543,7 @@ if($paths) {
 
             try
             {
-                AssemblyName assemblyName = ClrFacade.GetAssemblyName(psSnapInInfo.AbsoluteModulePath);
+                AssemblyName assemblyName = AssemblyName.GetAssemblyName(psSnapInInfo.AbsoluteModulePath);
 
                 if (!string.Equals(assemblyName.FullName, psSnapInInfo.AssemblyName, StringComparison.OrdinalIgnoreCase))
                 {
@@ -5551,7 +5552,7 @@ if($paths) {
                     throw new PSSnapInException(psSnapInInfo.Name, message);
                 }
 
-                assembly = ClrFacade.LoadFrom(psSnapInInfo.AbsoluteModulePath);
+                assembly = Assembly.LoadFrom(psSnapInInfo.AbsoluteModulePath);
             }
             catch (FileLoadException e)
             {
@@ -5882,6 +5883,10 @@ if($paths) {
                         var aliasList = new List<SessionStateAliasEntry>();
                         foreach (var alias in aliasAttribute.AliasNames)
                         {
+                            // Alias declared by AliasAttribute is set with the option 'ScopedItemOptions.None',
+                            // because we believe a user of the cmdlet, instead of the author of it,
+                            // should be the one to decide the option
+                            // ('ScopedItemOptions.ReadOnly' and/or 'ScopedItemOptions.AllScopes') of the alias usage."
                             var aliasEntry = new SessionStateAliasEntry(alias, cmdletName, "", ScopedItemOptions.None);
                             if (psSnapInInfo != null)
                             {

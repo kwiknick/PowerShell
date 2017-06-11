@@ -180,3 +180,91 @@ Describe "Validate that Get-Help returns provider-specific help" -Tags @('CI', '
         }
     }
 }
+
+Describe "Validate about_help.txt under culture specific folder works" -Tags @('CI') {
+    BeforeAll {
+        $modulePath = "$pshome\Modules\Test"
+        $null = New-Item -Path $modulePath\en-US -ItemType Directory -Force
+        New-ModuleManifest -Path $modulePath\test.psd1 -RootModule test.psm1
+        Set-Content -Path $modulePath\test.psm1 -Value "function foo{}"
+        Set-Content -Path $modulePath\en-US\about_testhelp.help.txt -Value "Hello" -NoNewline
+    }
+
+    AfterAll {
+        Remove-Item $modulePath -Recurse -Force
+    }
+
+    It "Get-Help should return help text and not multiple HelpInfo objects when help is under `$pshome path" {
+
+        $help = Get-Help about_testhelp
+        $help.count | Should Be 1
+        $help | Should BeExactly "Hello"
+    }
+}
+
+Describe "Get-Help should find help info within help files" -Tags @('CI', 'RequireAdminOnWindows') {
+    It "Get-Help should find help files under pshome" {
+        $helpFile = "about_testCase.help.txt"
+        $culture = (Get-Culture).Name
+        $helpFolderPath = Join-Path $PSHOME $culture
+        $helpFilePath = Join-Path $helpFolderPath $helpFile
+
+        if (!(Test-Path $helpFolderPath))
+        {
+            $null = New-Item -ItemType Directory -Path $helpFolderPath -ErrorAction SilentlyContinue
+        }
+        
+        try
+        {
+            $null = New-Item -ItemType File -Path $helpFilePath -Value "about_test" -ErrorAction SilentlyContinue
+            $helpContent = Get-Help about_testCase
+            $helpContent | Should Match "about_test"
+        }
+        finally
+        {
+            Remove-Item $helpFilePath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Describe "Get-Help should find pattern help files" -Tags "CI" {
+    
+    # There is a bug specific to Travis CI that hangs the test if "get-help" is used to search pattern string. This doesn't repro locally. 
+    # This occurs even if Unix system just returns "Directory.GetFiles(path, pattern);" as the windows' code does.
+    # Since there's currently no way to get the vm from Travis CI and the test PASSES locally on both Ubuntu and MacOS, excluding pattern test under Unix system.
+  
+  BeforeAll {
+    $helpFile1 = "about_testCase1.help.txt"
+    $helpFile2 = "about_testCase.2.help.txt"
+    $culture = (Get-Culture).Name
+    $helpFolderPath = Join-Path $PSHOME $culture
+    $helpFilePath1 = Join-Path $helpFolderPath $helpFile1
+    $helpFilePath2 = Join-Path $helpFolderPath $helpFile2
+    $null = New-Item -ItemType Directory -Path $helpFolderPath -ErrorAction SilentlyContinue -Force
+    # Create at least one help file matches "about*" pattern
+    $null = New-Item -ItemType File -Path $helpFilePath1 -Value "about_test1" -ErrorAction SilentlyContinue
+    $null = New-Item -ItemType File -Path $helpFilePath2 -Value "about_test2" -ErrorAction SilentlyContinue 
+  }
+
+  # Remove the test files
+  AfterAll {
+    Remove-Item $helpFilePath1 -Force -ErrorAction SilentlyContinue
+    Remove-Item $helpFilePath2 -Force -ErrorAction SilentlyContinue
+  }
+
+  $testcases = @(
+                  @{command = {Get-Help about_testCas?1}; testname = "test ? pattern"; result = "about_test1"}
+                  @{command = {Get-Help about_testCase.?}; testname = "test ? pattern with dot"; result = "about_test2"}
+                  @{command = {(Get-Help about_testCase*).Count}; testname = "test * pattern"; result = "2"}
+                  @{command = {Get-Help about_testCas?.2*}; testname = "test ?, * pattern with dot"; result = "about_test2"}
+               )
+
+    It "Get-Help should find pattern help files - <testname>" -TestCases $testcases -Pending: (-not $IsWindows){
+            param (
+            $command,
+            $result
+        )
+        $command.Invoke() | Should Be $result
+    }
+
+}

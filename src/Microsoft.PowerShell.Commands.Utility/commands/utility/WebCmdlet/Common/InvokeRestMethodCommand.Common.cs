@@ -17,6 +17,7 @@ namespace Microsoft.PowerShell.Commands
         /// gets or sets the parameter Method
         /// </summary>
         [Parameter(ParameterSetName = "StandardMethod")]
+        [Parameter(ParameterSetName = "StandardMethodNoProxy")]
         public override WebRequestMethod Method
         {
             get { return base.Method; }
@@ -26,13 +27,37 @@ namespace Microsoft.PowerShell.Commands
         /// <summary>
         /// gets or sets the parameter CustomMethod
         /// </summary>
-        [Parameter(ParameterSetName = "CustomMethod")]
+        [Parameter(Mandatory=true,ParameterSetName = "CustomMethod")]
+        [Parameter(Mandatory=true,ParameterSetName = "CustomMethodNoProxy")]
         [Alias("CM")]
         [ValidateNotNullOrEmpty]
         public override string CustomMethod
         {
             get { return base.CustomMethod; }
             set { base.CustomMethod = value; }
+        }
+
+        /// <summary>
+        /// enable automatic following of rel links
+        /// </summary>
+        [Parameter]
+        [Alias("FL")]
+        public SwitchParameter FollowRelLink
+        {
+            get { return base._followRelLink; }
+            set { base._followRelLink = value; }
+        }
+
+        /// <summary>
+        /// gets or sets the maximum number of rel links to follow
+        /// </summary>
+        [Parameter]
+        [Alias("ML")]
+        [ValidateRange(1, Int32.MaxValue)]
+        public int MaximumFollowRelLink
+        {
+            get { return base._maximumFollowRelLink; }
+            set { base._maximumFollowRelLink = value; }
         }
 
         #endregion Parameters

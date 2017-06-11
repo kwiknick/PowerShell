@@ -25,9 +25,8 @@ using System.Runtime.InteropServices;
 using System.Management.Automation.Runspaces;
 
 #if CORECLR
-// Use stubs for SafeHandleZeroOrMinusOneIsInvalid and SecurityZone
+// Use stubs for SecurityZone
 using Microsoft.PowerShell.CoreClr.Stubs;
-using Environment = System.Management.Automation.Environment;
 #endif
 
 namespace Microsoft.PowerShell.Commands
@@ -61,6 +60,11 @@ namespace Microsoft.PowerShell.Commands
         // maximum fragment size value for security.  If FILETRANSFERSIZE changes make sure the
         // copy script will accomodate the new value.
         private const int FILETRANSFERSIZE = 4 * 1024 * 1024;
+
+        // The name of the key in an exception's Data dictionary when attempting
+        // to copy an item onto itself.
+        private const string SelfCopyDataKey = "SelfCopy";
+
 
         /// <summary>
         /// An instance of the PSTraceSource class used for trace output
@@ -266,9 +270,7 @@ namespace Microsoft.PowerShell.Commands
                     string.IsNullOrEmpty(this.ProviderInfo.HelpFile) ? "" : this.ProviderInfo.HelpFile);
 
                 XmlReaderSettings settings = new XmlReaderSettings();
-#if !CORECLR    // No XmlReaderSettings.XmlResolver in CoreCLR
                 settings.XmlResolver = null;
-#endif
                 reader = XmlReader.Create(fullHelpPath, settings);
                 document.Load(reader);
 
@@ -1325,15 +1327,45 @@ namespace Microsoft.PowerShell.Commands
             {
                 System.Diagnostics.Process invokeProcess = new System.Diagnostics.Process();
 
+                try
+                {
+                    // Try Process.Start first.
+                    //  - In FullCLR, this is all we need to do.
+                    //  - In CoreCLR, this works for executables on Win/Unix platforms
+                    invokeProcess.StartInfo.FileName = path;
+                    invokeProcess.Start();
+                }
 #if UNIX
-                invokeProcess.StartInfo.FileName = Platform.IsLinux ? "xdg-open" : /* OS X */ "open";
-                invokeProcess.StartInfo.Arguments = path;
-                invokeProcess.Start();
+                catch (Win32Exception ex) when (ex.NativeErrorCode == 13)
+                {
+                    // Error code 13 -- Permission denied.
+                    // The file is possibly not an executable, so we try invoking the default program that handles this file.
+                    const string quoteFormat = "\"{0}\"";
+                    invokeProcess.StartInfo.FileName = Platform.IsLinux ? "xdg-open" : /* OS X */ "open";
+                    if (NativeCommandParameterBinder.NeedQuotes(path))
+                    {
+                        path = string.Format(CultureInfo.InvariantCulture, quoteFormat, path);
+                    }
+                    invokeProcess.StartInfo.Arguments = path;
+                    invokeProcess.Start();
+                }
 #elif CORECLR
-                throw new PlatformNotSupportedException();
+                catch (Win32Exception ex) when (ex.NativeErrorCode == 193)
+                {
+                    // Error code 193 -- BAD_EXE_FORMAT (not a valid Win32 application).
+                    // If it's headless SKUs, rethrow.
+                    if (Platform.IsNanoServer || Platform.IsIoT) { throw; }
+                    // If it's full Windows, then try ShellExecute.
+                    ShellExecuteHelper.Start(invokeProcess.StartInfo);
+                }
 #else
-                invokeProcess.StartInfo.FileName = path;
-                invokeProcess.Start();
+                finally
+                {
+                    // Nothing to do in FullCLR.
+                    // This empty 'finally' block is just to match the 'try' block above so that the code can be organized
+                    // in a clean way without too many if/def's.
+                    // Empty finally block will be ignored in release build, so there is no performance concern.
+                }
 #endif
             }
         } // InvokeDefaultAction
@@ -1507,14 +1539,6 @@ namespace Microsoft.PowerShell.Commands
                 if (isDirectory)
                 {
                     DirectoryInfo directory = new DirectoryInfo(path);
-
-                    if (!Platform.IsWindows && Platform.NonWindowsIsSymLink(directory))
-                    {
-                        // For Linux, treat symlink to directories like a file
-                        WriteItemObject(directory, path, false);
-                        return;
-                    }
-
                     // Enumerate the directory
                     Dir(directory, recurse, depth, nameOnly, returnContainers);
                 }
@@ -1653,50 +1677,84 @@ namespace Microsoft.PowerShell.Commands
                             return;
                         }
 
-                        bool attributeFilter = true;
-                        bool switchAttributeFilter = true;
-                        bool filterHidden = false;           // "Hidden" is specified somewhere in the expression
-                        bool switchFilterHidden = false;     // "Hidden" is specified somewhere in the parameters
-
-                        if (null != evaluator)
+                        // Internal test code, run only if one of the
+                        // 'GciEnumerationAction' test hooks are set.
+                        if (InternalTestHooks.GciEnumerationActionDelete)
                         {
-                            attributeFilter = evaluator.Evaluate(filesystemInfo.Attributes);  // expressions
-                            filterHidden = evaluator.ExistsInExpression(FileAttributes.Hidden);
-                        }
-                        if (null != switchEvaluator)
-                        {
-                            switchAttributeFilter = switchEvaluator.Evaluate(filesystemInfo.Attributes);  // switch parameters
-                            switchFilterHidden = switchEvaluator.ExistsInExpression(FileAttributes.Hidden);
-                        }
-
-                        bool hidden = false;
-                        if (!Force) hidden = (filesystemInfo.Attributes & FileAttributes.Hidden) != 0;
-
-                        // if "Hidden" is explicitly specified anywhere in the attribute filter, then override
-                        // default hidden attribute filter.
-                        // if specification is to return all containers, then do not do attribute filter on
-                        // the containers.
-                        bool attributeSatisfy =
-                            ((attributeFilter && switchAttributeFilter) ||
-                                ((returnContainers == ReturnContainers.ReturnAllContainers) &&
-                                ((filesystemInfo.Attributes & FileAttributes.Directory) != 0)));
-
-                        if (attributeSatisfy && (filterHidden || switchFilterHidden || Force || !hidden))
-                        {
-                            if (nameOnly)
+                            if (string.Equals(filesystemInfo.Name, "c283d143-2116-4809-bf11-4f7d61613f92", StringComparison.InvariantCulture))
                             {
-                                WriteItemObject(
-                                    filesystemInfo.Name,
-                                    filesystemInfo.FullName,
-                                    false);
+                                File.Delete(filesystemInfo.FullName);
                             }
-                            else
+                        }
+                        else if (InternalTestHooks.GciEnumerationActionRename)
+                        {
+                            if (string.Equals(filesystemInfo.Name, "B1B691A9-B7B1-4584-AED7-5259511BEEC4", StringComparison.InvariantCulture))
                             {
-                                if (filesystemInfo is FileInfo)
-                                    WriteItemObject(filesystemInfo, filesystemInfo.FullName, false);
+                                var newFullName = Path.Combine(directory.FullName, "77efd2bb-92aa-4ad3-979a-18936a4bd565");
+                                File.Move(filesystemInfo.FullName, newFullName);
+                            }
+                        }
+
+                        try
+                        {
+                            bool attributeFilter = true;
+                            bool switchAttributeFilter = true;
+                            // 'Hidden' is specified somewhere in the expression
+                            bool filterHidden = false;
+                            // 'Hidden' is specified somewhere in the parameters
+                            bool switchFilterHidden = false;
+
+                            if (null != evaluator)
+                            {
+                                attributeFilter = evaluator.Evaluate(filesystemInfo.Attributes);
+                                filterHidden = evaluator.ExistsInExpression(FileAttributes.Hidden);
+                            }
+                            if (null != switchEvaluator)
+                            {
+                                switchAttributeFilter = switchEvaluator.Evaluate(filesystemInfo.Attributes);
+                                switchFilterHidden = switchEvaluator.ExistsInExpression(FileAttributes.Hidden);
+                            }
+
+                            bool hidden = false;
+                            if (!Force)
+                            {
+                                hidden = (filesystemInfo.Attributes & FileAttributes.Hidden) != 0;
+                            }
+
+                            // If 'Hidden' is explicitly specified anywhere in the attribute filter, then override
+                            // default hidden attribute filter.
+                            // If specification is to return all containers, then do not do attribute filter on
+                            // the containers.
+                            bool attributeSatisfy =
+                                ((attributeFilter && switchAttributeFilter) ||
+                                    ((returnContainers == ReturnContainers.ReturnAllContainers) &&
+                                    ((filesystemInfo.Attributes & FileAttributes.Directory) != 0)));
+
+                            if (attributeSatisfy && (filterHidden || switchFilterHidden || Force || !hidden))
+                            {
+                                if (nameOnly)
+                                {
+                                    WriteItemObject(
+                                        filesystemInfo.Name,
+                                        filesystemInfo.FullName,
+                                        false);
+                                }
                                 else
-                                    WriteItemObject(filesystemInfo, filesystemInfo.FullName, true);
+                                {
+                                    if (filesystemInfo is FileInfo)
+                                        WriteItemObject(filesystemInfo, filesystemInfo.FullName, false);
+                                    else
+                                        WriteItemObject(filesystemInfo, filesystemInfo.FullName, true);
+                                }
                             }
+                        }
+                        catch (System.IO.FileNotFoundException ex)
+                        {
+                            WriteError(new ErrorRecord(ex, "DirIOError", ErrorCategory.ReadError, directory.FullName));
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            WriteError(new ErrorRecord(ex, "DirUnauthorizedAccessError", ErrorCategory.PermissionDenied, directory.FullName));
                         }
                     }// foreach
                 }// foreach
@@ -1730,15 +1788,25 @@ namespace Microsoft.PowerShell.Commands
                                 return;
                             }
 
-
-                            bool hidden = false;
-                            if (!Force) hidden = (recursiveDirectory.Attributes & FileAttributes.Hidden) != 0;
-
-                            // if "Hidden" is explicitly specified anywhere in the attribute filter, then override
-                            // default hidden attribute filter.
-                            if (Force || !hidden || isFilterHiddenSpecified || isSwitchFilterHiddenSpecified)
+                            // Once the recursion process has begun by being in this function,
+                            // we do not want to further recurse into directory symbolic links
+                            // so as to prevent the possibility of an endless symlink loop.
+                            // This is the behavior of both the Unix 'ls' command and the Windows
+                            // 'DIR' command.
+                            if (!InternalSymbolicLinkLinkCodeMethods.IsReparsePoint(recursiveDirectory))
                             {
-                                Dir(recursiveDirectory, recurse, depth - 1, nameOnly, returnContainers);
+                                bool hidden = false;
+                                if (!Force)
+                                {
+                                    hidden = (recursiveDirectory.Attributes & FileAttributes.Hidden) != 0;
+                                }
+
+                                // if "Hidden" is explicitly specified anywhere in the attribute filter, then override
+                                // default hidden attribute filter.
+                                if (Force || !hidden || isFilterHiddenSpecified || isSwitchFilterHiddenSpecified)
+                                {
+                                    Dir(recursiveDirectory, recurse, depth - 1, nameOnly, returnContainers);
+                                }
                             }
                         }//foreach
                     }//if
@@ -2126,9 +2194,9 @@ namespace Microsoft.PowerShell.Commands
                     // non-existing targets on either Windows or Linux.
                     try
                     {
-                        exists = (itemType == ItemType.SymbolicLink)
-                            ? true // pretend it exists if we're making a symbolic link
-                            : CheckItemExists(strTargetPath, out isDirectory);
+                        exists = CheckItemExists(strTargetPath, out isDirectory);
+                        if (itemType == ItemType.SymbolicLink)
+                            exists = true; // pretend the target exists if we're making a symbolic link
                     }
                     catch (Exception e)
                     {
@@ -2202,7 +2270,8 @@ namespace Microsoft.PowerShell.Commands
                     {
                         if (symLinkExists)
                         {
-                            WriteError(new ErrorRecord(new IOException("NewItemIOError"), "NewItemIOError", ErrorCategory.ResourceExists, path));
+                            string message = StringUtil.Format(FileSystemProviderStrings.SymlinkItemExists, path);
+                            WriteError(new ErrorRecord(new IOException(message), "SymLinkExists", ErrorCategory.ResourceExists, path));
                             return;
                         }
                     }
@@ -2849,15 +2918,6 @@ namespace Microsoft.PowerShell.Commands
                 continueRemoval = ShouldProcess(directory.FullName, action);
             }
 
-            //if this is a reparse point and force is not specified then warn user but dont remove the directory.
-            if (Platform.IsWindows && ((directory.Attributes & FileAttributes.ReparsePoint) != 0) && !Force)
-            {
-                String error = StringUtil.Format(FileSystemProviderStrings.DirectoryReparsePoint, directory.FullName);
-                Exception e = new IOException(error);
-                WriteError(new ErrorRecord(e, "DirectoryNotEmpty", ErrorCategory.WriteError, directory));
-                return;
-            }
-
             if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
             {
                 bool success = InternalSymbolicLinkLinkCodeMethods.DeleteJunction(directory.FullName);
@@ -3313,13 +3373,14 @@ namespace Microsoft.PowerShell.Commands
             path = NormalizePath(path);
 
             // First check to see if it is a directory
-
             try
             {
                 DirectoryInfo directory = new DirectoryInfo(path);
 
                 // If the above didn't throw an exception, check to
-                // see if it contains any directories
+                // see if we should proceed and if it contains any children
+                if ((directory.Attributes & FileAttributes.Directory) != FileAttributes.Directory)
+                    return false;
 
                 result = DirectoryInfoHasChildItems(directory);
             }
@@ -3448,14 +3509,14 @@ namespace Microsoft.PowerShell.Commands
             _excludeMatcher = SessionStateUtilities.CreateWildcardsFromStrings(Exclude, WildcardOptions.IgnoreCase);
 
             // if the source and destination path are same (for a local copy) then flag it as error.
-            if ((toSession == null) && (fromSession == null) && path.Equals(destinationPath, StringComparison.OrdinalIgnoreCase))
+            if ((toSession == null) && (fromSession == null) && InternalSymbolicLinkLinkCodeMethods.IsSameFileSystemItem(path, destinationPath))
             {
                 String error = StringUtil.Format(FileSystemProviderStrings.CopyError, path);
                 Exception e = new IOException(error);
+                e.Data[SelfCopyDataKey] = destinationPath;
                 WriteError(new ErrorRecord(e, "CopyError", ErrorCategory.WriteError, path));
                 return;
             }
-
             // Copy-Item from session
             if (fromSession != null)
             {
@@ -3765,14 +3826,14 @@ namespace Microsoft.PowerShell.Commands
                 }
 
                 //if the source and destination path are same then flag it as error.
-                if (destinationPath.Equals(file.FullName, StringComparison.OrdinalIgnoreCase))
+                if (InternalSymbolicLinkLinkCodeMethods.IsSameFileSystemItem(destinationPath, file.FullName))
                 {
                     String error = StringUtil.Format(FileSystemProviderStrings.CopyError, destinationPath);
                     Exception e = new IOException(error);
+                    e.Data[SelfCopyDataKey] = file.FullName;
                     WriteError(new ErrorRecord(e, "CopyError", ErrorCategory.WriteError, destinationPath));
                     return;
                 }
-
                 // Verify that the target doesn't represent a device name
                 if (PathIsReservedDeviceName(destinationPath, "CopyError"))
                 {
@@ -4947,6 +5008,23 @@ namespace Microsoft.PowerShell.Commands
                                 return String.Empty;
                             }
 
+#if UNIX
+                            // We don't use the Directory class for Unix because the path
+                            // may contain additional globbing patterns such as '[ab]'
+                            // which Directory.EnumerateFiles() processes, giving undesireable
+                            // results in this context.
+                            if (!Utils.NativeItemExists(result))
+                            {
+                                String error = StringUtil.Format(FileSystemProviderStrings.ItemDoesNotExist, path);
+                                Exception e = new IOException(error);
+                                WriteError(new ErrorRecord(
+                                    e,
+                                    "ItemDoesNotExist",
+                                    ErrorCategory.ObjectNotFound,
+                                    path));
+                                break;
+                            }
+#else
                             string leafName = GetChildName(result);
 
                             // Use the Directory class to get the real path (this will
@@ -4972,6 +5050,7 @@ namespace Microsoft.PowerShell.Commands
                             }
 
                             result = files.First();
+#endif
 
                             if (result.StartsWith(basePath, StringComparison.CurrentCulture))
                             {
@@ -7490,86 +7569,9 @@ namespace Microsoft.PowerShell.Commands
         {
             get
             {
-                return GetEncodingFromEnum(Encoding);
+                return Utils.GetEncodingFromEnum(Encoding);
             }
         } // EncodingType
-
-        /// <summary>
-        /// Converts the stream type string into an Encoding
-        /// </summary>
-        ///
-        /// <param name="type">
-        /// This is a string representation of the encoding. It can be
-        /// "string", "unicode", "bigendianunicode", "ascii", "utf7", or "utf8"
-        ///
-        /// Note, a ToLowerInvariant is done to the type before comparison is made.
-        /// </param>
-        ///
-        /// <returns>
-        /// The encoding that was represented by the string
-        /// </returns>
-        ///
-        /// <throws>
-        /// ArgumentException if type is null, empty, or does not represent one
-        /// of the known encoding types.
-        /// </throws>
-        private static Encoding GetEncodingFromEnum(FileSystemCmdletProviderEncoding type)
-        {
-            System.Text.Encoding encoding;
-
-            switch (type)
-            {
-                case FileSystemCmdletProviderEncoding.String:
-                    encoding = System.Text.Encoding.Unicode;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.Unicode:
-                    encoding = System.Text.Encoding.Unicode;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.BigEndianUnicode:
-                    encoding = System.Text.Encoding.BigEndianUnicode;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.UTF8:
-                    encoding = System.Text.Encoding.UTF8;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.UTF7:
-                    encoding = System.Text.Encoding.UTF7;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.UTF32:
-                    encoding = System.Text.Encoding.UTF32;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.BigEndianUTF32:
-                    encoding = System.Text.Encoding.GetEncoding("utf-32BE");
-                    break;
-
-                case FileSystemCmdletProviderEncoding.Ascii:
-                    encoding = System.Text.Encoding.ASCII;
-                    break;
-
-                case FileSystemCmdletProviderEncoding.Default:
-                    encoding = ClrFacade.GetDefaultEncoding();
-                    break;
-
-                case FileSystemCmdletProviderEncoding.Oem:
-                    {
-                        uint oemCP = NativeMethods.GetOEMCP();
-                        encoding = System.Text.Encoding.GetEncoding((int)oemCP);
-                    }
-                    break;
-
-                default:
-                    // Default to unicode encoding
-                    encoding = System.Text.Encoding.Unicode;
-                    break;
-            }
-
-            return encoding;
-        } // GetEncodingFromEnum
 
         /// <summary>
         /// Gets the Byte Encoding status of the StreamType parameter.  Returns true
@@ -7595,11 +7597,6 @@ namespace Microsoft.PowerShell.Commands
             } // get
         } // WasStreamTypeSpecified
 
-        private static class NativeMethods
-        {
-            [DllImport(PinvokeDllNames.GetOEMCPDllName, SetLastError = false, CharSet = CharSet.Unicode)]
-            internal static extern uint GetOEMCP();
-        }
     } // class FileSystemContentDynamicParametersBase
 
     /// <summary>
@@ -8205,6 +8202,42 @@ namespace Microsoft.PowerShell.Commands
             return isHardLink;
         }
 
+        internal static bool IsSameFileSystemItem(string pathOne, string pathTwo)
+        {
+#if UNIX
+            return Platform.NonWindowsIsSameFileSystemItem(pathOne, pathTwo);
+#else
+            return WinIsSameFileSystemItem(pathOne, pathTwo);
+#endif
+        }
+
+        internal static bool WinIsSameFileSystemItem(string pathOne, string pathTwo)
+        {
+            var access = FileAccess.Read;
+            var share = FileShare.Read;
+            var creation = FileMode.Open;
+            var attributes = FileAttributes.BackupSemantics | FileAttributes.PosixSemantics;
+
+            using (var sfOne = AlternateDataStreamUtilities.NativeMethods.CreateFile(pathOne, access, share, IntPtr.Zero, creation, (int)attributes, IntPtr.Zero))
+            using (var sfTwo = AlternateDataStreamUtilities.NativeMethods.CreateFile(pathTwo, access, share, IntPtr.Zero, creation, (int)attributes, IntPtr.Zero))
+            {
+                if (!sfOne.IsInvalid && !sfTwo.IsInvalid)
+                {
+                    BY_HANDLE_FILE_INFORMATION  infoOne;
+                    BY_HANDLE_FILE_INFORMATION  infoTwo;
+                    if (   GetFileInformationByHandle(sfOne.DangerousGetHandle(), out infoOne)
+                        && GetFileInformationByHandle(sfTwo.DangerousGetHandle(), out infoTwo))
+                    {
+                        return    infoOne.VolumeSerialNumber == infoTwo.VolumeSerialNumber
+                               && infoOne.FileIndexHigh == infoTwo.FileIndexHigh
+                               && infoOne.FileIndexLow == infoTwo.FileIndexLow;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         internal static bool IsHardLink(ref IntPtr handle)
         {
 #if UNIX
@@ -8658,7 +8691,7 @@ namespace System.Management.Automation.Internal
             // the code above seems cleaner and more robust than the IAttachmentExecute approach
         }
 
-        private static class NativeMethods
+        internal static class NativeMethods
         {
             internal const int ERROR_HANDLE_EOF = 38;
             internal enum StreamInfoLevels { FindStreamInfoStandard = 0 }

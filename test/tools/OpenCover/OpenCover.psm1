@@ -363,7 +363,7 @@ function Install-OpenCover
 {
     param (
         [parameter()][string]$Version = "4.6.519",
-        [parameter()][string]$TargetDirectory = "~/",
+        [parameter()][string]$TargetDirectory = "$home",
         [parameter()][switch]$Force
         )
 
@@ -422,13 +422,14 @@ function Invoke-OpenCover
 {
     [CmdletBinding(SupportsShouldProcess=$true)]
     param (
-        [parameter()]$OutputLog = "$pwd/OpenCover.xml",
-        [parameter()]$TestDirectory = "$($script:psRepoPath)/test/powershell",
-        [parameter()]$OpenCoverPath = "~/OpenCover",
-        [parameter()]$PowerShellExeDirectory = "$($script:psRepoPath)/src/powershell-win-core/bin/CodeCoverage/netcoreapp1.0/win10-x64",
+        [parameter()]$OutputLog = "$home/Documents/OpenCover.xml",
+        [parameter()]$TestDirectory = "${script:psRepoPath}/test/powershell",
+        [parameter()]$OpenCoverPath = "$home/OpenCover",
+        [parameter()]$PowerShellExeDirectory = "${script:psRepoPath}/src/powershell-win-core/bin/CodeCoverage/netcoreapp2.0/win10-x64/publish",
         [parameter()]$PesterLogElevated = "$pwd/TestResultsElevated.xml",
         [parameter()]$PesterLogUnelevated = "$pwd/TestResultsUnelevated.xml",
         [parameter()]$PesterLogFormat = "NUnitXml",
+        [parameter()]$TestToolsModulesPath = "${script:psRepoPath}/test/tools/Modules",
         [switch]$CIOnly
         )
 
@@ -453,7 +454,9 @@ function Invoke-OpenCover
     }
 
     # create the arguments for OpenCover
-    $targetArgs = "-c", "Set-ExecutionPolicy Bypass -Force -Scope Process;", "Invoke-Pester","${TestDirectory}"
+
+    $startupArgs =  '$env:PSModulePath = "${env:PSModulePath};$TestToolsPath";Set-ExecutionPolicy Bypass -Force -Scope Process;'
+    $targetArgs = "-c","${startupArgs}", "Invoke-Pester","${TestDirectory}"
 
     if ( $CIOnly )
     {
@@ -481,12 +484,12 @@ function Invoke-OpenCover
         try
         {
             # check to be sure that the module path is present
-            # this isn't done earlier because there's no need to change env:psmodulepath unless we're going to really run tests
-            $saveModPath = $env:psmodulepath
-            $env:psmodulepath = "${PowerShellExeDirectory}\Modules"
-            if ( ! (test-path $env:psmodulepath) )
+            # this isn't done earlier because there's no need to change env:PSModulePath unless we're going to really run tests
+            $saveModPath = $env:PSModulePath
+            $env:PSModulePath = "${PowerShellExeDirectory}\Modules"
+            if ( ! (test-path $env:PSModulePath) )
             {
-                throw "${env:psmodulepath} does not exist"
+                throw "${env:PSModulePath} does not exist"
             }
 
             # invoke OpenCover elevated
