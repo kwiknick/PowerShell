@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Concurrent;
@@ -10,10 +9,6 @@ using System.Diagnostics;
 using System.Management.Automation.Internal;
 using Microsoft.PowerShell.Commands;
 using Dbg = System.Management.Automation.Diagnostics;
-
-#if CORECLR
-using System.Reflection;
-#endif
 
 namespace System.Management.Automation
 {
@@ -228,6 +223,28 @@ namespace System.Management.Automation
             BindCommandLineParameters();
         }
 
+        protected override void OnSetCurrentScope()
+        {
+            // When dotting a script cmdlet, push the locals of automatic variables to
+            // the 'DottedScopes' of the current scope.
+            PSScriptCmdlet scriptCmdlet = this.Command as PSScriptCmdlet;
+            if (scriptCmdlet != null && !UseLocalScope)
+            {
+                scriptCmdlet.PushDottedScope(CommandSessionState.CurrentScope);
+            }
+        }
+
+        protected override void OnRestorePreviousScope()
+        {
+            // When dotting a script cmdlet, pop the locals of automatic variables from
+            // the 'DottedScopes' of the current scope.
+            PSScriptCmdlet scriptCmdlet = this.Command as PSScriptCmdlet;
+            if (scriptCmdlet != null && !UseLocalScope)
+            {
+                scriptCmdlet.PopDottedScope(CommandSessionState.CurrentScope);
+            }
+        }
+
         /// <summary>
         /// Execute BeginProcessing part of command
         /// </summary>
@@ -389,7 +406,6 @@ namespace System.Management.Automation
         /// Tells whether to bail out in the next call to Read
         /// </summary>
         private bool _bailInNextCall;
-
 
         /// <summary>
         /// Populates the parameters specified from the pipeline.
@@ -667,7 +683,7 @@ namespace System.Management.Automation
         ///
         private void Init(CmdletInfo cmdletInformation)
         {
-            Diagnostics.Assert(cmdletInformation != null, "Constructor should throw exception if LookupCommand returned  null.");
+            Diagnostics.Assert(cmdletInformation != null, "Constructor should throw exception if LookupCommand returned null.");
 
             Cmdlet newCmdlet = null;
             Exception initError = null;
@@ -734,13 +750,17 @@ namespace System.Management.Automation
 
         private void Init(IScriptCommandInfo scriptCommandInfo)
         {
-            InternalCommand scriptCmdlet =
-                new PSScriptCmdlet(scriptCommandInfo.ScriptBlock, _useLocalScope, FromScriptFile, _context);
-
+            var scriptCmdlet = new PSScriptCmdlet(scriptCommandInfo.ScriptBlock, UseLocalScope, FromScriptFile, _context);
             this.Command = scriptCmdlet;
-            this.CommandScope = _useLocalScope
+            this.CommandScope = UseLocalScope
                                     ? this.CommandSessionState.NewScope(_fromScriptFile)
                                     : this.CommandSessionState.CurrentScope;
+
+            if (UseLocalScope)
+            {
+                // Set the 'LocalsTuple' of the new scope to that of the scriptCmdlet
+                scriptCmdlet.SetLocalsTupleForNewScope(CommandScope);
+            }
 
             InitCommon();
 
@@ -832,5 +852,4 @@ namespace System.Management.Automation
 #endregion helper_methods
     }
 }
-
 

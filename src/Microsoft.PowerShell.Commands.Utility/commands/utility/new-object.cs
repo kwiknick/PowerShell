@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 #region Using directives
 
@@ -31,12 +30,12 @@ namespace Microsoft.PowerShell.Commands
         [Parameter(ParameterSetName = netSetName, Mandatory = true, Position = 0)]
         public string TypeName { get; set; } = null;
 
-
+#if !UNIX
         private Guid _comObjectClsId = Guid.Empty;
         /// <summary> the ProgID of the Com object</summary>
         [Parameter(ParameterSetName = "Com", Mandatory = true, Position = 0)]
         public string ComObject { get; set; } = null;
-
+#endif
 
         /// <summary>
         /// The parameters for the constructor
@@ -100,7 +99,6 @@ namespace Microsoft.PowerShell.Commands
             ThrowTerminatingError(
                 new ErrorRecord(ex, "SetValueException", ErrorCategory.InvalidData, null));
         }
-
 
         private static string ParameterSet2ResourceString(string parameterSet)
         {
@@ -245,6 +243,7 @@ namespace Microsoft.PowerShell.Commands
                      "CannotFindAppropriateCtor",
                      ErrorCategory.ObjectNotFound, null));
             }
+#if !UNIX
             else // Parameterset -Com
             {
                 int result = NewObjectNativeMethods.CLSIDFromProgID(ComObject, out _comObjectClsId);
@@ -295,10 +294,12 @@ namespace Microsoft.PowerShell.Commands
                 }
                 WriteObject(comObject);
             }
+#endif
         }//protected override void BeginProcessing()
 
         #endregion Overrides
 
+#if !UNIX
         #region Com
 
         private object SafeCreateInstance(Type t, object[] args)
@@ -467,6 +468,7 @@ namespace Microsoft.PowerShell.Commands
         }
 
         #endregion Com
+#endif
 
         // HResult code '-2147417850' - Cannot change thread mode after it is set.
         private const int RPC_E_CHANGED_MODE = unchecked((int)0x80010106);

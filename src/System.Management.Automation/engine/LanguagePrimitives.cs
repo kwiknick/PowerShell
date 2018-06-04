@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Generic;
@@ -12,6 +11,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Management.Automation.Language;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -19,9 +19,9 @@ using System.IO;
 using System.Text;
 using System.Management.Automation.Internal;
 using System.Management.Automation.Runspaces;
-using System.Diagnostics.CodeAnalysis; // for fxcop
+using System.Diagnostics.CodeAnalysis;
 using Dbg = System.Management.Automation.Diagnostics;
-using System.Reflection.Emit;
+using MethodCacheEntry = System.Management.Automation.DotNetAdapter.MethodCacheEntry;
 
 #if !CORECLR
 // System.DirectoryServices are not in CoreCLR
@@ -374,7 +374,7 @@ namespace System.Management.Automation
             private void CreateGetEnumerator()
             {
                 _getEnumerator = new DynamicMethod("GetEnumerator", typeof(object),
-                    new Type[] { typeof(object) }, typeof(LanguagePrimitives).GetTypeInfo().Module, true);
+                    new Type[] { typeof(object) }, typeof(LanguagePrimitives).Module, true);
 
                 ILGenerator emitter = _getEnumerator.GetILGenerator();
 
@@ -399,8 +399,7 @@ namespace System.Management.Automation
         {
             foreach (Type i in obj.GetType().GetInterfaces())
             {
-                TypeInfo typeinfo = i.GetTypeInfo();
-                if (typeinfo.IsGenericType && typeinfo.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
                 {
                     return new EnumerableTWrapper(obj, i);
                 }
@@ -440,8 +439,21 @@ namespace System.Management.Automation
 
         internal static bool IsTypeEnumerable(Type type)
         {
+            if (type == null) { return false; }
             GetEnumerableDelegate getEnumerable = GetOrCalculateEnumerable(type);
             return (getEnumerable != LanguagePrimitives.ReturnNullEnumerable);
+        }
+
+        /// <summary>
+        /// Returns True if the language considers obj to be IEnumerable
+        /// </summary>
+        /// <param name="obj">
+        /// IEnumerable or IEnumerable-like object
+        /// </param>
+        [SuppressMessage("Microsoft.Naming", "CA1720:IdentifiersShouldNotContainTypeNames", MessageId = "obj", Justification = "Since V1 code is already shipped, excluding this message.")]
+        public static bool IsObjectEnumerable(object obj)
+        {
+            return IsTypeEnumerable(PSObject.Base(obj)?.GetType());
         }
 
         /// <summary>
@@ -453,26 +465,9 @@ namespace System.Management.Automation
         [SuppressMessage("Microsoft.Naming", "CA1720:IdentifiersShouldNotContainTypeNames", MessageId = "obj", Justification = "Since V1 code is already shipped, excluding this message.")]
         public static IEnumerable GetEnumerable(object obj)
         {
-            if (obj == null)
-            {
-                return null;
-            }
-
-            Type objectType = obj.GetType();
-
-            // if the object passed is an PSObject,
-            // look at the base object. Notice that, if the
-            // object has been serialized, the base object
-            // will be there as an ArrayList if the original
-            // object was IEnumerable
-            if (objectType == typeof(PSObject))
-            {
-                PSObject mshObj = (PSObject)obj;
-                obj = mshObj.BaseObject;
-                objectType = obj.GetType();
-            }
-
-            GetEnumerableDelegate getEnumerable = GetOrCalculateEnumerable(objectType);
+            obj = PSObject.Base(obj);
+            if (obj == null) { return null; }
+            GetEnumerableDelegate getEnumerable = GetOrCalculateEnumerable(obj.GetType());
             return getEnumerable(obj);
         }
 
@@ -481,12 +476,10 @@ namespace System.Management.Automation
             return null;
         }
 
-#if !CORECLR
         private static IEnumerable DataTableEnumerable(object obj)
         {
             return (((DataTable)obj).Rows);
         }
-#endif
 
         private static IEnumerable TypicalEnumerable(object obj)
         {
@@ -522,12 +515,10 @@ namespace System.Management.Automation
 
         private static GetEnumerableDelegate CalculateGetEnumerable(Type objectType)
         {
-#if !CORECLR
             if (typeof(DataTable).IsAssignableFrom(objectType))
             {
                 return LanguagePrimitives.DataTableEnumerable;
             }
-#endif
 
             // Don't treat IDictionary or XmlNode as enumerable...
             if (typeof(IEnumerable).IsAssignableFrom(objectType)
@@ -539,7 +530,6 @@ namespace System.Management.Automation
 
             return LanguagePrimitives.ReturnNullEnumerable;
         }
-
 
         private static readonly CallSite<Func<CallSite, object, IEnumerator>> s_getEnumeratorSite =
             CallSite<Func<CallSite, object, IEnumerator>>.Create(PSEnumerableBinder.Get());
@@ -811,7 +801,6 @@ namespace System.Management.Automation
                     default: return 1;
                 }
             }
-
 
             string firstString = first as string;
 
@@ -1221,7 +1210,7 @@ namespace System.Management.Automation
             // - TimeSpan part of "datetime"
             // - <classname> ref
             TypeCode typeCode = LanguagePrimitives.GetTypeCode(type);
-            if (LanguagePrimitives.IsCimIntrinsicScalarType(typeCode) && !type.GetTypeInfo().IsEnum)
+            if (LanguagePrimitives.IsCimIntrinsicScalarType(typeCode) && !type.IsEnum)
             {
                 return true;
             }
@@ -1233,7 +1222,6 @@ namespace System.Management.Automation
 
             return false;
         }
-
 
         /// <summary>
         /// Verifies if type is one of the boolean types
@@ -1292,8 +1280,7 @@ namespace System.Management.Automation
         {
             foreach (Type i in dictionary.GetType().GetInterfaces())
             {
-                TypeInfo typeInfo = i.GetTypeInfo();
-                if (typeInfo.IsGenericType && typeInfo.GetGenericTypeDefinition() == typeof(IDictionary<,>))
+                if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>))
                 {
                     // If we get here, we know the target implements IDictionary.  We will assume
                     // that the non-generic implementation of the indexer property just forwards
@@ -1377,7 +1364,7 @@ namespace System.Management.Automation
                 return typesXmlConverter;
             }
 
-            var typeConverters = type.GetTypeInfo().GetCustomAttributes(typeof(TypeConverterAttribute), false);
+            var typeConverters = type.GetCustomAttributes(typeof(TypeConverterAttribute), false);
             foreach (var typeConverter in typeConverters)
             {
                 var attr = (TypeConverterAttribute)typeConverter;
@@ -1550,7 +1537,7 @@ namespace System.Management.Automation
         ///                                                 query is run using ManagementObjectSearcher Class.
         ///     - to WMIClass                           -   returns ManagementClass represented by the
         ///                                                 string representation of valueToConvert.
-        ///     - to ADSI                               -   returns DirectoryEntry  represented by the
+        ///     - to ADSI                               -   returns DirectoryEntry represented by the
         ///                                                 string representation of valueToConvert.
         ///     - to ADSISearcher                       -   return DirectorySearcher represented by the
         ///                                                 string representation of valueToConvert.
@@ -1840,7 +1827,7 @@ namespace System.Management.Automation
 
                     // See if the [Flag] attribute is set on this type...
                     // MemberInfo.GetCustomAttributes returns IEnumerable<Attribute> in CoreCLR.
-                    bool hasFlagsAttribute = enumType.GetTypeInfo().GetCustomAttributes(typeof(FlagsAttribute), false).Any();
+                    bool hasFlagsAttribute = enumType.GetCustomAttributes(typeof(FlagsAttribute), false).Any();
 
                     returnValue = new EnumHashEntry(Enum.GetNames(enumType), values, allValues, hasNegativeValue, hasFlagsAttribute);
                     s_enumTable.Add(enumType, returnValue);
@@ -1850,7 +1837,7 @@ namespace System.Management.Automation
 
             public override bool CanConvertFrom(object sourceValue, Type destinationType)
             {
-                return sourceValue is string && destinationType.GetTypeInfo().IsEnum;
+                return sourceValue is string && destinationType.IsEnum;
             }
 
             /// <summary>
@@ -1978,7 +1965,7 @@ namespace System.Management.Automation
                         ExtendedTypeSystem.InvalidCastException,
                         sourceValue, ObjectToTypeNameString(sourceValue), destinationType);
                 }
-                Diagnostics.Assert(destinationType.GetTypeInfo().IsEnum, "EnumSingleTypeConverter is only applied to enumerations");
+                Diagnostics.Assert(destinationType.IsEnum, "EnumSingleTypeConverter is only applied to enumerations");
                 if (sourceValueString.Length == 0)
                 {
                     throw new PSInvalidCastException("InvalidCastEnumFromEmptyString", null,
@@ -2314,7 +2301,7 @@ namespace System.Management.Automation
                                                     IFormatProvider formatProvider,
                                                     TypeTable backupTable)
         {
-            typeConversion.WriteLine("Standard type conversion to  DirectoryEntry.");
+            typeConversion.WriteLine("Standard type conversion to DirectoryEntry.");
 
             string valueToConvertString;
             try
@@ -3340,7 +3327,7 @@ namespace System.Management.Automation
                     valueToConvert.ToString(), resultType.ToString(), e.Message);
             }
 
-            // Check if the result is a defined enum..otherwise throw  an error
+            // Check if the result is a defined enum..otherwise throw an error
             // valueToConvert is the user supplied value. Use that in the error message.
             EnumSingleTypeConverter.ThrowForUndefinedEnum("UndefinedIntegerToEnum", result, valueToConvert, resultType);
 
@@ -3454,6 +3441,65 @@ namespace System.Management.Automation
             }
 
             return ConvertStringToEnum(sbResult.ToString(), resultType, recursion, originalValueToConvert, formatProvider, backupTable);
+        }
+
+        private class PSMethodToDelegateConverter
+        {
+            // Index of the matching overload method.
+            private readonly int _matchIndex;
+            // Size of the cache. It's rare to have more than 10 overloads for a method.
+            private const int CacheSize = 10;
+            private static readonly PSMethodToDelegateConverter[] s_converterCache = new PSMethodToDelegateConverter[CacheSize];
+
+            private PSMethodToDelegateConverter(int matchIndex)
+            {
+                _matchIndex = matchIndex;
+            }
+
+            internal static PSMethodToDelegateConverter GetConverter(int matchIndex)
+            {
+                if (matchIndex >= CacheSize) { return new PSMethodToDelegateConverter(matchIndex); }
+
+                var result = s_converterCache[matchIndex];
+                if (result == null)
+                {
+                    // If the cache entry is null, generate a new instance for the cache slot.
+                    var converter = new PSMethodToDelegateConverter(matchIndex);
+                    Threading.Interlocked.CompareExchange(ref s_converterCache[matchIndex], converter, null);
+                    result = s_converterCache[matchIndex];
+                }
+
+                return result;
+            }
+
+            internal Delegate Convert(object valueToConvert,
+                                      Type resultType,
+                                      bool recursion,
+                                      PSObject originalValueToConvert,
+                                      IFormatProvider formatProvider,
+                                      TypeTable backupTable)
+            {
+                // We can only possibly convert PSMethod instance of the type PSMethod<T>.
+                // Such a PSMethod essentially represents a set of .NET method overloads.
+                var psMethod = (PSMethod)valueToConvert;
+
+                try
+                {
+                    var methods = (MethodCacheEntry)psMethod.adapterData;
+                    var isStatic = psMethod.instance is Type;
+
+                    var candidate = (MethodInfo)methods.methodInformationStructures[_matchIndex].method;
+                    return isStatic ? candidate.CreateDelegate(resultType)
+                                    : candidate.CreateDelegate(resultType, psMethod.instance);
+                }
+                catch (Exception e)
+                {
+                    typeConversion.WriteLine("PSMethod to Delegate exception: \"{0}\".", e.Message);
+                    throw new PSInvalidCastException("InvalidCastExceptionPSMethodToDelegate", e,
+                        ExtendedTypeSystem.InvalidCastExceptionWithInnerException,
+                        valueToConvert.ToString(), resultType.ToString(), e.Message);
+                }
+            }
         }
 
         private class ConvertViaParseMethod
@@ -3691,7 +3737,7 @@ namespace System.Management.Automation
                     ExecutionContext ecFromTLS = LocalPipeline.GetExecutionContextFromTLS();
                     object result = null;
 
-                    if ((ecFromTLS == null) || (ecFromTLS != null && ecFromTLS.LanguageMode == PSLanguageMode.FullLanguage))
+                    if (ecFromTLS == null || ecFromTLS.LanguageMode == PSLanguageMode.FullLanguage)
                     {
                         result = _constructor();
                         var psobject = valueToConvert as PSObject;
@@ -3835,7 +3881,6 @@ namespace System.Management.Automation
                     resultType, recursion, formatProvider, backupTable);
             }
         }
-
 
         private class ConvertCheckingForCustomConverter
         {
@@ -4007,6 +4052,7 @@ namespace System.Management.Automation
             return null;
         }
 
+        [System.Diagnostics.DebuggerDisplay("{from.Name}->{to.Name}")]
         private struct ConversionTypePair
         {
             internal Type from;
@@ -4060,6 +4106,7 @@ namespace System.Management.Automation
                           TypeTable backupTable);
         }
 
+        [System.Diagnostics.DebuggerDisplay("{_converter.Method.Name}")]
         internal class ConversionData<T> : ConversionData
         {
             private readonly PSConverter<T> _converter;
@@ -4139,7 +4186,6 @@ namespace System.Management.Automation
         private static Type[] s_unsignedIntegerTypes = new Type[] { typeof(Byte), typeof(UInt16), typeof(UInt32), typeof(UInt64) };
 
         private static Type[] s_realTypes = new Type[] { typeof(Single), typeof(Double), typeof(Decimal) };
-
 
         internal static void RebuildConversionCache()
         {
@@ -4547,7 +4593,7 @@ namespace System.Management.Automation
             string errorId, errorMsg;
             if (PSObject.Base(valueToConvert) == null)
             {
-                if (resultType.GetTypeInfo().IsEnum)
+                if (resultType.IsEnum)
                 {
                     typeConversion.WriteLine("Issuing an error message about not being able to convert null to an Enum type.");
                     // a nice error message specifically for null being converted to enum
@@ -4617,11 +4663,11 @@ namespace System.Management.Automation
                 {
                     converter = LanguagePrimitives.ConvertIListToBool;
                 }
-                else if (fromType.GetTypeInfo().IsEnum)
+                else if (fromType.IsEnum)
                 {
                     converter = LanguagePrimitives.CreateNumericToBoolConverter(fromType);
                 }
-                else if (fromType.GetTypeInfo().IsValueType)
+                else if (fromType.IsValueType)
                 {
                     converter = LanguagePrimitives.ConvertValueToBool;
                 }
@@ -4634,7 +4680,7 @@ namespace System.Management.Automation
 
             if (toType == typeof(string))
             {
-                Dbg.Assert(!LanguagePrimitives.IsNumeric(LanguagePrimitives.GetTypeCode(fromType)) || fromType.GetTypeInfo().IsEnum,
+                Dbg.Assert(!LanguagePrimitives.IsNumeric(LanguagePrimitives.GetTypeCode(fromType)) || fromType.IsEnum,
                     "Number to string should be cached on initialization of cache table");
                 return CacheConversion<string>(fromType, toType, LanguagePrimitives.ConvertNonNumericToString, ConversionRank.ToString);
             }
@@ -4737,12 +4783,154 @@ namespace System.Management.Automation
             }
 
             TypeCode fromTypeCode = LanguagePrimitives.GetTypeCode(fromType);
-            if (LanguagePrimitives.IsInteger(fromTypeCode) && toType.GetTypeInfo().IsEnum)
+            if (LanguagePrimitives.IsInteger(fromTypeCode) && toType.IsEnum)
             {
                 return CacheConversion<object>(fromType, toType, LanguagePrimitives.ConvertIntegerToEnum, ConversionRank.Language);
             }
 
+            if (fromType.IsSubclassOf(typeof(PSMethod)) && toType.IsSubclassOf(typeof(Delegate)) && !toType.IsAbstract)
+            {
+                var targetMethod = toType.GetMethod("Invoke");
+                var comparator = new SignatureComparator(targetMethod);
+                var signatureEnumerator = new PSMethodSignatureEnumerator(fromType);
+                int index = -1, matchedIndex = -1;
+
+                while (signatureEnumerator.MoveNext())
+                {
+                    index++;
+                    var signatureType = signatureEnumerator.Current;
+                    // Skip the non-bindable signatures
+                    if (signatureType == typeof(Func<PSNonBindableType>)) { continue; }
+
+                    Type[] argumentTypes = signatureType.GenericTypeArguments;
+                    if (comparator.ProjectedSignatureMatchesTarget(argumentTypes, out bool signaturesMatchExactly))
+                    {
+                        if (signaturesMatchExactly)
+                        {
+                            // We prefer the signature that exactly matches the target delegate.
+                            matchedIndex = index;
+                            break;
+                        }
+
+                        // If there is no exact match, then we use the first compatible signature we found.
+                        if (matchedIndex == -1) { matchedIndex = index; }
+                    }
+                }
+
+                if (matchedIndex > -1)
+                {
+                    // We got the index of the matching method signature based on the PSMethod<..> type.
+                    // Signatures in PSMethod<..> type were constructed based on the array of method overloads,
+                    // in the exact order. So we can use this index directly to locate the matching overload in
+                    // the converter, without having to compare the signature again.
+                    var converter = PSMethodToDelegateConverter.GetConverter(matchedIndex);
+                    return CacheConversion<Delegate>(fromType, toType, converter.Convert, ConversionRank.Language);
+                }
+            }
+
             return null;
+        }
+
+        private struct SignatureComparator
+        {
+            enum TypeMatchingContext
+            {
+                ReturnType,
+                ParameterType,
+                OutParameterType
+            }
+
+            private readonly ParameterInfo[] targetParameters;
+            private readonly Type targetReturnType;
+
+            internal SignatureComparator(MethodInfo targetMethodInfo)
+            {
+                targetReturnType = targetMethodInfo.ReturnType;
+                targetParameters = targetMethodInfo.GetParameters();
+            }
+
+            /// <summary>
+            /// Check if a projected signature matches the target method.
+            /// </summary>
+            /// <param name="argumentTypes">
+            /// The type arguments from the metadata type 'Func[..]' that represents the projected signature.
+            /// It contains the return type as the last item in the array.
+            /// </param>
+            /// <param name="signaturesMatchExactly">
+            /// Set by this method to indicate if it's an exact match.
+            /// </param>
+            internal bool ProjectedSignatureMatchesTarget(Type[] argumentTypes, out bool signaturesMatchExactly)
+            {
+                signaturesMatchExactly = false;
+                int length = argumentTypes.Length;
+                if (length != targetParameters.Length + 1) { return false; }
+
+                bool typesMatchExactly, allTypesMatchExactly;
+                Type sourceReturnType = argumentTypes[length - 1];
+
+                if (ProjectedTypeMatchesTargetType(sourceReturnType, targetReturnType, TypeMatchingContext.ReturnType, out typesMatchExactly))
+                {
+                    allTypesMatchExactly = typesMatchExactly;
+                    for (int i = 0; i < targetParameters.Length; i++)
+                    {
+                        var targetParam = targetParameters[i];
+                        var sourceType = argumentTypes[i];
+                        var matchContext = targetParam.IsOut ? TypeMatchingContext.OutParameterType : TypeMatchingContext.ParameterType;
+
+                        if (!ProjectedTypeMatchesTargetType(sourceType, targetParam.ParameterType, matchContext, out typesMatchExactly))
+                        {
+                            return false;
+                        }
+                        allTypesMatchExactly &= typesMatchExactly;
+                    }
+
+                    signaturesMatchExactly = allTypesMatchExactly;
+                    return true;
+                }
+
+                return false;
+            }
+
+            private static bool ProjectedTypeMatchesTargetType(Type sourceType, Type targetType, TypeMatchingContext matchContext, out bool matchExactly)
+            {
+                matchExactly = false;
+                if (targetType.IsByRef || targetType.IsPointer)
+                {
+                    if (!sourceType.IsGenericType) { return false; }
+
+                    var sourceTypeDef = sourceType.GetGenericTypeDefinition();
+                    bool isOutParameter = matchContext == TypeMatchingContext.OutParameterType;
+
+                    if (targetType.IsByRef && sourceTypeDef == (isOutParameter ? typeof(PSOutParameter<>) : typeof(PSReference<>)) ||
+                        targetType.IsPointer && sourceTypeDef == typeof(PSPointer<>))
+                    {
+                        // For ref/out parameter types and pointer types, the element types need to match exactly.
+                        if (targetType.GetElementType() == sourceType.GenericTypeArguments[0])
+                        {
+                            matchExactly = true;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                if (targetType == sourceType ||
+                    targetType == typeof(void) && sourceType == typeof(VOID) ||
+                    targetType == typeof(TypedReference) && sourceType == typeof(PSTypedReference))
+                {
+                    matchExactly = true;
+                    return true;
+                }
+
+                if (targetType == typeof(void) || targetType == typeof(TypedReference))
+                {
+                    return false;
+                }
+
+                return matchContext == TypeMatchingContext.ReturnType
+                    ? targetType.IsAssignableFrom(sourceType)
+                    : sourceType.IsAssignableFrom(targetType);
+            }
         }
 
         private static PSConverter<object> FigureStaticCreateMethodConversion(Type fromType, Type toType)
@@ -4760,7 +4948,7 @@ namespace System.Management.Automation
 
         private static PSConverter<object> FigureParseConversion(Type fromType, Type toType)
         {
-            if (toType.GetTypeInfo().IsEnum)
+            if (toType.IsEnum)
             {
                 if (fromType == typeof(string))
                 {
@@ -4831,8 +5019,7 @@ namespace System.Management.Automation
         internal static Tuple<PSConverter<object>, ConversionRank> FigureIEnumerableConstructorConversion(Type fromType, Type toType)
         {
             // Win8: 653180. If toType is an Abstract type then we cannot construct it anyway. So, bailing out fast.
-            TypeInfo toTypeInfo = toType.GetTypeInfo();
-            if (toTypeInfo.IsAbstract == true)
+            if (toType.IsAbstract == true)
             {
                 return null;
             }
@@ -4844,7 +5031,7 @@ namespace System.Management.Automation
                 Type elementType = null;
                 ConstructorInfo resultConstructor = null;
 
-                if (toTypeInfo.IsGenericType && !toTypeInfo.ContainsGenericParameters &&
+                if (toType.IsGenericType && !toType.ContainsGenericParameters &&
                     (typeof(IList).IsAssignableFrom(toType) ||
                      typeof(ICollection).IsAssignableFrom(toType) ||
                      typeof(IEnumerable).IsAssignableFrom(toType)))
@@ -4985,7 +5172,7 @@ namespace System.Management.Automation
             {
                 ParameterInfo[] targetParams = resultConstructor.GetParameters();
                 Type targetParamType = targetParams[0].ParameterType;
-                bool useExplicitConversion = targetParamType.GetTypeInfo().IsValueType && fromType != targetParamType && Nullable.GetUnderlyingType(targetParamType) == null;
+                bool useExplicitConversion = targetParamType.IsValueType && fromType != targetParamType && Nullable.GetUnderlyingType(targetParamType) == null;
                 converter.TargetCtorLambda = CreateCtorLambdaClosure<object, object>(resultConstructor, targetParamType, useExplicitConversion);
             }
             catch (Exception e)
@@ -5013,8 +5200,7 @@ namespace System.Management.Automation
 
         internal static PSConverter<object> FigurePropertyConversion(Type fromType, Type toType, ref ConversionRank rank)
         {
-            TypeInfo toTypeInfo = toType.GetTypeInfo();
-            if ((!typeof(PSObject).IsAssignableFrom(fromType)) || (toTypeInfo.IsAbstract))
+            if ((!typeof(PSObject).IsAssignableFrom(fromType)) || (toType.IsAbstract))
             {
                 return null;
             }
@@ -5033,7 +5219,7 @@ namespace System.Management.Automation
                 typeConversion.WriteLine("Exception finding Constructor: \"{0}\".", e.Message);
             }
 
-            if (toConstructor == null && !toTypeInfo.IsValueType)
+            if (toConstructor == null && !toType.IsValueType)
             {
                 return null;
             }
@@ -5103,7 +5289,7 @@ namespace System.Management.Automation
             }
 
             // GetCustomAttributes returns IEnumerable<Attribute> in CoreCLR
-            var typeConverters = type.GetTypeInfo().GetCustomAttributes(typeof(TypeConverterAttribute), false);
+            var typeConverters = type.GetCustomAttributes(typeof(TypeConverterAttribute), false);
             if (typeConverters.Any())
             {
                 return true;
@@ -5178,17 +5364,16 @@ namespace System.Management.Automation
                     }
                 }
             }
-#if CORECLR
+
             // Assemblies in CoreCLR might not allow reflection execution on their internal types.
-            TypeInfo typeInfo = toType.GetTypeInfo();
-            if (!TypeResolver.IsPublic(typeInfo) && DotNetAdapter.DisallowPrivateReflection(typeInfo))
+            if (!TypeResolver.IsPublic(toType) && DotNetAdapter.DisallowPrivateReflection(toType))
             {
                 // If the type is non-public and reflection execution is not allowed on it, then we return
                 // 'ConvertNoConversion', because we won't be able to invoke constructor, methods or set
                 // properties on an instance of this type through reflection.
                 return CacheConversion(fromType, toType, ConvertNoConversion, ConversionRank.None);
             }
-#endif
+
             PSConverter<object> valueDependentConversion = null;
             ConversionRank valueDependentRank = ConversionRank.None;
             ConversionData conversionData = FigureLanguageConversion(fromType, toType, out valueDependentConversion, out valueDependentRank);
@@ -5213,7 +5398,7 @@ namespace System.Management.Automation
                         {
                             if (typeof(IConvertible).IsAssignableFrom(fromType))
                             {
-                                if (LanguagePrimitives.IsNumeric(GetTypeCode(fromType)) && !fromType.GetTypeInfo().IsEnum)
+                                if (LanguagePrimitives.IsNumeric(GetTypeCode(fromType)) && !fromType.IsEnum)
                                 {
                                     if (!toType.IsArray)
                                     {
@@ -5240,8 +5425,7 @@ namespace System.Management.Automation
                                 // So, we need to check only for the first condition
                                 ConstructorInfo resultConstructor = toType.GetConstructor(PSTypeExtensions.EmptyTypes);
 
-                                TypeInfo toTypeInfo = toType.GetTypeInfo();
-                                if (resultConstructor != null || (toTypeInfo.IsValueType && !toTypeInfo.IsPrimitive))
+                                if (resultConstructor != null || (toType.IsValueType && !toType.IsPrimitive))
                                 {
                                     ConvertViaNoArgumentConstructor noArgumentConstructorConverter = new ConvertViaNoArgumentConstructor(resultConstructor, toType);
                                     converter = noArgumentConstructorConverter.Convert;
@@ -5324,7 +5508,7 @@ namespace System.Management.Automation
             {
                 return CacheConversion<object>(typeof(Null), toType, LanguagePrimitives.ConvertNullToNullable, ConversionRank.NullToValue);
             }
-            else if (!toType.GetTypeInfo().IsValueType)
+            else if (!toType.IsValueType)
             {
                 return CacheConversion<object>(typeof(Null), toType, LanguagePrimitives.ConvertNullToRef, ConversionRank.NullToRef);
             }

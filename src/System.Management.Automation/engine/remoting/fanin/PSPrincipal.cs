@@ -1,6 +1,5 @@
-/********************************************************************++
- * Copyright (c) Microsoft Corporation.  All rights reserved.
- * --********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 /*
  * Contains definition for PSSenderInfo, PSPrincipal, PSIdentity which are
@@ -8,6 +7,7 @@
  * like Exchange.
  */
 
+using System;
 using System.Security.Principal;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.Serialization;
@@ -82,9 +82,7 @@ namespace System.Management.Automation.Remoting
                 ConnectionString = senderInfo.ConnectionString;
                 _applicationArguments = senderInfo._applicationArguments;
 
-#if !CORECLR // TimeZone Not In CoreCLR
-                this.clientTimeZone = senderInfo.ClientTimeZone;
-#endif
+                ClientTimeZone = senderInfo.ClientTimeZone;
             }
             catch (Exception)
             {
@@ -126,17 +124,14 @@ namespace System.Management.Automation.Remoting
             // cmdlets/scripts a chance to modify these.
         }
 
-#if !CORECLR // TimeZone Not In CoreCLR
         /// <summary>
         /// Contains the TimeZone information from the client machine.
         /// </summary>
-        public TimeZone ClientTimeZone
+        public TimeZoneInfo ClientTimeZone
         {
-            get { return clientTimeZone; }
-            internal set { clientTimeZone = value; }
+            get;
+            internal set;
         }
-        private TimeZone clientTimeZone;
-#endif
 
         /// <summary>
         /// Connection string used by the client to connect to the server. This is
@@ -244,7 +239,7 @@ namespace System.Management.Automation.Remoting
             }
         }
 
-        #region  Constructor
+        #region Constructor
 
         /// <summary>
         /// Constructs PSPrincipal using PSIdentity and a WindowsIdentity

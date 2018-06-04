@@ -243,6 +243,9 @@
   <data name="TargetCannotContainDeviceName" xml:space="preserve">
     <value>Cannot process path '{0}' because the target represents a reserved device name.</value>
   </data>
+  <data name="EncodingNotUsed" xml:space="preserve">
+    <value>Encoding not used when '-AsByteStream' specified.</value>
+  </data>
   <data name="ByteEncodingError" xml:space="preserve">
     <value>Cannot proceed with byte encoding. When using byte encoding the content must be of type byte.</value>
   </data>
@@ -338,5 +341,8 @@
   </data>
   <data name="SymlinkItemExists" xml:space="preserve">
     <value>Cannot create symbolic link because the path {0} already exists.</value>
+  </data>
+  <data name="AlreadyListedDirectory" xml:space="preserve">
+    <value>Skip already-visited directory {0}.</value>
   </data>
 </root>

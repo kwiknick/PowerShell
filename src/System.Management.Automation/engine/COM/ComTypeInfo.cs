@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
@@ -16,13 +15,24 @@ namespace System.Management.Automation
     internal class ComTypeInfo
     {
         /// <summary>
+        /// A member with a DISPID equal to –4 is found on a collection interface.
+        /// This special member, often called '_NewEnum', returns an interface that enables clients to enumerate objects in a collection.
+        /// </summary>
+        internal const int DISPID_NEWENUM = -4;
+
+        /// <summary>
+        /// A member with a DISPID equal to 0 is considered a default member.
+        /// Default members in COM can be transformed to default members in .NET (indexers in C#).
+        /// </summary>
+        internal const int DISPID_DEFAULTMEMBER = 0;
+
+        /// <summary>
         ///  Member variables.
         /// </summary>
         private Dictionary<String, ComProperty> _properties = null;
         private Dictionary<String, ComMethod> _methods = null;
         private COM.ITypeInfo _typeinfo = null;
         private Guid _guid = Guid.Empty;
-
 
         /// <summary>
         ///  Constructor
@@ -40,11 +50,10 @@ namespace System.Management.Automation
             }
         }
 
-
         /// <summary>
         ///  Collection of properties in the COM object.
         /// </summary>
-        public Dictionary<String, ComProperty> Properties
+        internal Dictionary<String, ComProperty> Properties
         {
             get
             {
@@ -55,7 +64,7 @@ namespace System.Management.Automation
         /// <summary>
         ///  Collection of methods in the COM object.
         /// </summary>
-        public Dictionary<String, ComMethod> Methods
+        internal Dictionary<String, ComMethod> Methods
         {
             get
             {
@@ -63,18 +72,22 @@ namespace System.Management.Automation
             }
         }
 
-
-
         /// <summary>
         ///  Returns the string of the GUID for the type information.
         /// </summary>
-        public string Clsid
+        internal string Clsid
         {
             get
             {
                 return _guid.ToString();
             }
         }
+
+        /// <summary>
+        /// If 'DISPID_NEWENUM' member is present, return the InvokeKind;
+        /// otherwise, return null.
+        /// </summary>
+        internal COM.INVOKEKIND? NewEnumInvokeKind { get; private set; }
 
         /// <summary>
         /// Initializes the typeinfo object
@@ -91,6 +104,8 @@ namespace System.Management.Automation
                 for (int i = 0; i < typeattr.cFuncs; i++)
                 {
                     COM.FUNCDESC funcdesc = GetFuncDesc(_typeinfo, i);
+                    if (funcdesc.memid == DISPID_NEWENUM) { NewEnumInvokeKind = funcdesc.invkind; }
+
                     if ((funcdesc.wFuncFlags & 0x1) == 0x1)
                     {
                         // http://msdn.microsoft.com/en-us/library/ee488948.aspx
@@ -120,7 +135,6 @@ namespace System.Management.Automation
                 }
             }
         }
-
 
         /// <summary>
         ///  Get the typeinfo interface for the given comobject.
@@ -157,7 +171,6 @@ namespace System.Management.Automation
             return result;
         }
 
-
         private void AddProperty(string strName, COM.FUNCDESC funcdesc, int index)
         {
             ComProperty prop;
@@ -188,7 +201,6 @@ namespace System.Management.Automation
             }
         }
 
-
         /// <summary>
         ///  Get TypeAttr for the given type information.
         /// </summary>
@@ -199,7 +211,7 @@ namespace System.Management.Automation
         {
             IntPtr pTypeAttr;
             typeinfo.GetTypeAttr(out pTypeAttr);
-            COM.TYPEATTR typeattr = ClrFacade.PtrToStructure<COM.TYPEATTR>(pTypeAttr);
+            COM.TYPEATTR typeattr = Marshal.PtrToStructure<COM.TYPEATTR>(pTypeAttr);
             typeinfo.ReleaseTypeAttr(pTypeAttr);
             return typeattr;
         }
@@ -215,11 +227,10 @@ namespace System.Management.Automation
         {
             IntPtr pFuncDesc;
             typeinfo.GetFuncDesc(index, out pFuncDesc);
-            COM.FUNCDESC funcdesc = ClrFacade.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
+            COM.FUNCDESC funcdesc = Marshal.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
             typeinfo.ReleaseFuncDesc(pFuncDesc);
             return funcdesc;
         }
-
 
         /// <summary>
         ///
@@ -249,7 +260,6 @@ namespace System.Management.Automation
             }
             return dispinfo;
         }
-
 
         /// <summary>
         /// Get the IDispatch Typeinfo from CoClass typeinfo.

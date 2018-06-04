@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Text;
@@ -62,9 +61,6 @@ namespace Microsoft.PowerShell.Commands
         [SecurityPermission(SecurityAction.LinkDemand)]
         protected override void Dispose(bool disposing)
         {
-#if CORECLR
-            base.Dispose(disposing);
-#else
             try
             {
                 if (disposing)
@@ -76,21 +72,7 @@ namespace Microsoft.PowerShell.Commands
             {
                 base.Dispose(disposing);
             }
-#endif
         }
-
-#if !CORECLR
-        /// <summary>
-        /// Closes the dialog and then calls the base class Close
-        /// </summary>
-        [SecurityPermission(SecurityAction.LinkDemand)]
-        public override void Close()
-        {
-            // Call the base class close
-
-            base.Close();
-        }
-#endif
 
         #endregion TraceListener constructors and disposer
 

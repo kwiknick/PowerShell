@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Reflection;
@@ -10,10 +9,7 @@ using System.Management.Automation.Runspaces;
 using System.Management.Automation.Tracing;
 using System.Globalization;
 using System.Threading;
-
-#if CORECLR
 using System.Runtime.InteropServices;
-#endif
 
 namespace Microsoft.PowerShell
 {
@@ -26,38 +22,22 @@ namespace Microsoft.PowerShell
         /// Starts managed MSH
         /// </summary>
         /// <param name="consoleFilePath">
-        /// Console file used to create a runspace configuration to start MSH
+        /// Deprecated: Console file used to create a runspace configuration to start MSH
         /// </param>
         /// <param name="args">
         /// Command line arguments to the managed MSH
         /// </param>
-#if CORECLR
 #pragma warning disable 1573
         public static int Start(string consoleFilePath, [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr, SizeParamIndex = 2)]string[] args, int argc)
 #pragma warning restore 1573
-#else
-        public int Start(string consoleFilePath, string[] args)
-#endif
         {
-#if !CORECLR
-            // For long-path support, Full .NET requires some AppContext switches;
-            // (for CoreCLR this is Not needed, because CoreCLR supports long paths by default)
-            // internally in .NET they are cached once retrieved and are typically hit very early during an application run;
-            // so per .NET team's recommendation, we are setting them as soon as we enter managed code.
-            EnableLongPathsInDotNetIfAvailable();
-#endif
             System.Management.Automation.Runspaces.EarlyStartup.Init();
 
-            // Set ETW activity Id
-            Guid activityId = EtwActivity.GetActivityId();
-
-            if (activityId == Guid.Empty)
-            {
-                EtwActivity.SetActivityId(EtwActivity.CreateActivityId());
-            }
-
-            PSEtwLog.LogOperationalInformation(PSEventId.Perftrack_ConsoleStartupStart, PSOpcode.WinStart,
-                PSTask.PowershellConsoleStartup, PSKeyword.UseAlwaysOperational);
+#if !UNIX
+            // NOTE: On Unix, logging has to be deferred until after command-line parsing
+            // complete. On Windows, deferring the call is not needed.
+            PSEtwLog.LogConsoleStartup();
+#endif
 
             // Windows Vista and later support non-traditional UI fallback ie., a
             // user on an Arabic machine can choose either French or English(US) as
@@ -69,58 +49,26 @@ namespace Microsoft.PowerShell
             Thread.CurrentThread.CurrentUICulture = NativeCultureResolver.UICulture;
             Thread.CurrentThread.CurrentCulture = NativeCultureResolver.Culture;
 
-            RunspaceConfigForSingleShell configuration = null;
-            PSConsoleLoadException warning = null;
-            //      PSSnapInException will cause the control to return back to the native code
-            //      and stuff the EXCEPINFO field with the message of the exception.
-            //      The native code will print this out and exit the process.
-            if (string.IsNullOrEmpty(consoleFilePath))
-            {
 #if DEBUG
-// Special switches for debug mode to allow self-hosting on InitialSessionState instead
-// of runspace configuration...
-                    if (args.Length > 0 && !String.IsNullOrEmpty(args[0]) && args[0].Equals("-iss", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ConsoleHost.DefaultInitialSessionState = InitialSessionState.CreateDefault2();
-                        configuration = null;
-                    }
-                    else if (args.Length > 0 && !String.IsNullOrEmpty(args[0]) && args[0].Equals("-isswait", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Console.WriteLine("Attach the debugger and hit enter to continue:");
-                        Console.ReadLine();
-                        ConsoleHost.DefaultInitialSessionState = InitialSessionState.CreateDefault2();
-                        configuration = null;
-                    }
-                    else
-                    {
-                        ConsoleHost.DefaultInitialSessionState = InitialSessionState.CreateDefault2();
-                        configuration = null;
-                    }
-#else
-                ConsoleHost.DefaultInitialSessionState = InitialSessionState.CreateDefault2();
-                configuration = null;
-#endif
-            }
-            else
+            if (args.Length > 0 && !String.IsNullOrEmpty(args[0]) && args[0].Equals("-isswait", StringComparison.OrdinalIgnoreCase))
             {
-                //TODO : Deprecate RunspaceConfiguration and use InitialSessionState
-                configuration =
-                    RunspaceConfigForSingleShell.Create(consoleFilePath, out warning);
+                Console.WriteLine("Attach the debugger to continue...");
+                while (!System.Diagnostics.Debugger.IsAttached) {
+                    Thread.Sleep(100);
+                }
+                System.Diagnostics.Debugger.Break();
             }
+#endif
+            ConsoleHost.DefaultInitialSessionState = InitialSessionState.CreateDefault2();
+
             int exitCode = 0;
             try
             {
-#if CORECLR
                 var banner = ManagedEntranceStrings.ShellBannerNonWindowsPowerShell;
-#else
-                var banner = ManagedEntranceStrings.ShellBanner;
-#endif
                 var formattedBanner = string.Format(CultureInfo.InvariantCulture, banner, PSVersionInfo.GitCommitId);
                 exitCode = Microsoft.PowerShell.ConsoleShell.Start(
-                    configuration,
                     formattedBanner,
-                    ManagedEntranceStrings.ShellHelp,
-                    warning == null ? null : warning.Message,
+                    ManagedEntranceStrings.UsageHelp,
                     args);
             }
             catch (System.Management.Automation.Host.HostException e)
@@ -145,27 +93,6 @@ namespace Microsoft.PowerShell
             }
             return exitCode;
         }
-
-#if !CORECLR
-        private static void EnableLongPathsInDotNetIfAvailable()
-        {
-            // We build against CLR4.5 so we can run on Win7/Win8, but we want to use apis added to CLR 4.6, so we use reflection
-            try
-            {
-                Type appContextType = Type.GetType("System.AppContext"); // type is in mscorlib, so it is sufficient to supply the type name qualified by its namespace
-
-                object[] blockLongPathsSwitch = new object[] { "Switch.System.IO.BlockLongPaths", false };
-                object[] useLegacyPathHandlingSwitch = new object[] { "Switch.System.IO.UseLegacyPathHandling", false };
-
-                appContextType.InvokeMember("SetSwitch", BindingFlags.Public | BindingFlags.Static | BindingFlags.InvokeMethod, null, null, blockLongPathsSwitch, CultureInfo.InvariantCulture);
-                appContextType.InvokeMember("SetSwitch", BindingFlags.Public | BindingFlags.Static | BindingFlags.InvokeMethod, null, null, useLegacyPathHandlingSwitch, CultureInfo.InvariantCulture);
-            }
-            catch
-            {
-                // If there are any exceptions (e.g. we are running on CLR prior to 4.6.2), we won't be able to use long paths
-            }
-        }
-#endif
     }
 }
 

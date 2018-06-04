@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
 <#
     Much of this script belongs in a module, but we don't support importing classes yet.
 #>
@@ -105,9 +107,9 @@ function Test-Completions
                 foreach ($expected in $test.ExpectedResults)
                 {
                     $skip = $false
-                    if ( $expected.CompletionText -match "System.Management.Automation.PerformanceData|System.Management.Automation.Security" ) { $skip = $true }
+                    if ( $expected.CompletionText -Match "System.Management.Automation.PerformanceData|System.Management.Automation.Security" ) { $skip = $true }
                     It ($expected.CompletionText) -skip:$skip {
-                        $expected.Found | Should Be $true
+                        $expected.Found | Should -BeTrue
                     }
                 }
 
@@ -116,7 +118,7 @@ function Test-Completions
                     It "Not expected: $notExpected" {
                         foreach ($result in $results.CompletionMatches)
                         {
-                            ($result.CompletionText -ceq $notExpected) | Should Be $False
+                            $result.CompletionText | Should -Not -Be $notExpected
                         }
                     }
                 }
@@ -235,7 +237,7 @@ Describe "Test completion of parameters for native commands" -Tags "CI" {
 
         @("-dir", "-verbose", "-help", "-version") |
         Where-Object {
-            $_ -match "$wordToComplete*"
+            $_ -Match "$wordToComplete*"
         } |
         ForEach-Object {
             [CompletionResult]::new($_, $_, [CompletionResultType]::ParameterName, $_)
@@ -354,4 +356,98 @@ Describe "Additional type name completion tests" -Tags "CI" {
             )
         TestInput = 'Get-Command -ParameterType System.Collections.Generic.Dic'
     } | Get-CompletionTestCaseData | Test-Completions
+}
+
+Describe "ArgumentCompletionsAttribute tests" -Tags "CI" {
+
+    BeforeAll {
+        function TestArgumentCompletionsAttribute
+        {
+            param(
+                [ArgumentCompletions("value1", "value2", "value3")]
+                $Alpha,
+                $Beta
+            )
+        }
+
+        function TestArgumentCompletionsAttribute1
+        {
+            param(
+                [ArgumentCompletionsAttribute("value1", "value2", "value3")]
+                $Alpha,
+                $Beta
+            )
+        }
+
+        $cmdletSrc=@'
+        using System;
+        using System.Management.Automation;
+        using System.Collections.Generic;
+
+        namespace Test.A {
+
+            [Cmdlet(VerbsCommon.Get, "ArgumentCompletions")]
+            public class TestArgumentCompletionsAttributeCommand : PSCmdlet
+            {
+                [Parameter]
+                [ArgumentCompletions("value1", "value2", "value3")]
+                public string Param1;
+
+                protected override void EndProcessing()
+                {
+                    WriteObject(Param1);
+                }
+            }
+
+            [Cmdlet(VerbsCommon.Get, "ArgumentCompletions1")]
+            public class TestArgumentCompletionsAttributeCommand1 : PSCmdlet
+            {
+                [Parameter]
+                [ArgumentCompletionsAttribute("value1", "value2", "value3")]
+                public string Param1;
+
+                protected override void EndProcessing()
+                {
+                    WriteObject(Param1);
+                }
+            }
+        }
+'@
+        $cls = Add-Type -TypeDefinition $cmdletSrc -PassThru | Select-Object -First 1
+        $testModule = Import-Module $cls.Assembly -PassThru
+
+        $testCasesScript = @(
+            @{ attributeName = "ArgumentCompletions"         ; cmdletName = "TestArgumentCompletionsAttribute"  },
+            @{ attributeName = "ArgumentCompletionsAttribute"; cmdletName = "TestArgumentCompletionsAttribute1" }
+        )
+
+        $testCasesCSharp = @(
+            @{ attributeName = "ArgumentCompletions"         ; cmdletName = "Get-ArgumentCompletions"  },
+            @{ attributeName = "ArgumentCompletionsAttribute"; cmdletName = "Get-ArgumentCompletions1" }
+        )
+    }
+
+    AfterAll {
+        Remove-Module -ModuleInfo $testModule
+    }
+
+    It "<attributeName> works in script" -TestCases $testCasesScript {
+        param($attributeName, $cmdletName)
+
+        $line = "$cmdletName -Alpha val"
+        $res = TaBexpansion2 -inputScript $line -cursorColumn $line.Length
+        $res.CompletionMatches.Count | Should -Be 3
+        $res.CompletionMatches.CompletionText -join " " | Should -BeExactly "value1 value2 value3"
+        { TestArgumentCompletionsAttribute -Alpha unExpectedValue } | Should -Not -Throw
+    }
+
+    It "<attributeName> works in C#" -TestCases $testCasesCSharp {
+        param($attributeName, $cmdletName)
+
+        $line = "$cmdletName -Param1 val"
+        $res = TaBexpansion2 -inputScript $line -cursorColumn $line.Length
+        $res.CompletionMatches.Count | Should -Be 3
+        $res.CompletionMatches.CompletionText -join " " | Should -BeExactly "value1 value2 value3"
+        { TestArgumentCompletionsAttribute -Param1 unExpectedValue } | Should -Not -Throw
+    }
 }

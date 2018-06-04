@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
 Describe "Start-Transcript, Stop-Transcript tests" -tags "CI" {
 
     BeforeAll {
@@ -24,21 +26,21 @@ Describe "Start-Transcript, Stop-Transcript tests" -tags "CI" {
                 $ps.commands.clear()
 
                 if($expectedError) {
-                    $ps.hadErrors | Should be $true
+                    $ps.hadErrors | Should -BeTrue
                     $ps.Streams.Error.FullyQualifiedErrorId | Should be $expectedError
                 } else {
                     $ps.addscript("Get-Date").Invoke()
                     $ps.commands.clear()
                     $ps.addscript("Stop-Transcript").Invoke()
 
-                    Test-Path $outputFilePath | Should be $true
-                    $outputFilePath | should contain "Get-Date"
+                    Test-Path $outputFilePath | Should -BeTrue
+                    $outputFilePath | should FileContentMatch "Get-Date"
                     if($append) {
-                        $outputFilePath | Should contain $content
+                        $outputFilePath | Should FileContentMatch $content
                     }
                 }
             } finally {
-                if ($ps -ne $null) {
+                if ($null -ne $ps) {
                     $ps.Dispose()
                 }
             }
@@ -48,7 +50,6 @@ Describe "Start-Transcript, Stop-Transcript tests" -tags "CI" {
         $transcriptFilePath = join-path $TestDrive "transcriptdata.txt"
         Remove-Item $transcriptFilePath -Force -ErrorAction SilentlyContinue
     }
-
 
     AfterEach {
         Remove-Item $transcriptFilePath -ErrorAction SilentlyContinue
@@ -105,5 +106,45 @@ Describe "Start-Transcript, Stop-Transcript tests" -tags "CI" {
         $script = "Start-Transcript -OutputDirectory $inputPath"
         $expectedError = "CannotStartTranscription,Microsoft.PowerShell.Commands.StartTranscriptCommand"
         ValidateTranscription -scriptToExecute $script -outputFilePath $null -expectedError $expectedError
+    }
+    It "Transcription should remain active if other runspace in the host get closed" {
+        try {
+            $ps = [powershell]::Create()
+            $ps.addscript("Start-Transcript -path $transcriptFilePath").Invoke()
+            $ps.addscript('$rs = [system.management.automation.runspaces.runspacefactory]::CreateRunspace()').Invoke()
+            $ps.addscript('$rs.open()').Invoke()
+            $ps.addscript('$rs.Dispose()').Invoke()
+            $ps.addscript('Write-Host "After Dispose"').Invoke()
+            $ps.addscript("Stop-Transcript").Invoke()
+        } finally {
+            if ($null -ne $ps) {
+                $ps.Dispose()
+            }
+        }
+
+        Test-Path $transcriptFilePath | Should be $true
+        $transcriptFilePath | Should FileContentMatch "After Dispose"
+    }
+
+    It "Transcription should be closed if the only runspace gets closed" {
+        $powerShellPath = [System.Diagnostics.Process]::GetCurrentProcess().Path
+        $powerShellCommand = $powerShellPath + ' -c "start-transcript $transcriptFilePath; Write-Host ''Before Dispose'';"'
+        Invoke-Expression $powerShellCommand
+
+        Test-Path $transcriptFilePath | Should -BeTrue
+        $transcriptFilePath | Should FileContentMatch "Before Dispose"
+        $transcriptFilePath | Should FileContentMatch "PowerShell transcript end"
+    }
+
+    It "Transcription should record native command output" {
+        $script = {
+            Start-Transcript -Path $transcriptFilePath
+            hostname
+            Stop-Transcript }
+        & $script
+        Test-Path $transcriptFilePath | Should -BeTrue
+
+        $machineName = [System.Environment]::MachineName
+        $transcriptFilePath | Should FileContentMatch $machineName
     }
 }

@@ -1,7 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 #if !UNIX
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
 
 using System;
 using System.Collections.ObjectModel;
@@ -64,9 +63,6 @@ namespace Microsoft.PowerShell.Commands
     public sealed partial class RegistryProvider :
         NavigationCmdletProvider,
         IPropertyCmdletProvider,
-#if SUPPORTS_IMULTIVALUEPROPERTYCMDLETPROVIDER
-        IMultivaluePropertyCmdletProvider,
-#endif
         IDynamicPropertyCmdletProvider,
         ISecurityDescriptorCmdletProvider
     {
@@ -231,7 +227,6 @@ namespace Microsoft.PowerShell.Commands
 
             WriteRegistryItemObject(result, path);
         } // GetItem
-
 
         /// <summary>
         /// Sets registry values at <paramref name="path "/> to the <paramref name="value"/> specified.
@@ -814,7 +809,6 @@ namespace Microsoft.PowerShell.Commands
             return result.ToString();
         } // EscapeSpecialChars
 
-
         /// <summary>
         /// Escapes the characters in the registry key name that are used by globbing and
         /// path.
@@ -931,7 +925,6 @@ namespace Microsoft.PowerShell.Commands
                 MoveRegistryItem(path, newPath);
             } // ShouldProcess
         } // RenameItem
-
 
         /// <summary>
         /// Creates a new registry key or value at the specified <paramref name="path"/>.
@@ -1369,7 +1362,6 @@ namespace Microsoft.PowerShell.Commands
             key.Close();
         } // CopyItem
 
-
         private bool CopyRegistryKey(
             IRegistryWrapper key,
             string path,
@@ -1430,7 +1422,6 @@ namespace Microsoft.PowerShell.Commands
             }
 
             string destinationPath = MakePath(destinationParent, destinationName);
-
 
             // Confirm the copy item with the user
 
@@ -1971,8 +1962,6 @@ namespace Microsoft.PowerShell.Commands
             key.Close();
         } // SetProperty
 
-
-
         /// <summary>
         /// Gives the provider a chance to attach additional parameters to the
         /// get-itemproperty cmdlet.
@@ -2075,7 +2064,6 @@ namespace Microsoft.PowerShell.Commands
             }
         }
 
-
         #region Unimplemented methods
 
         /// <summary>
@@ -2104,7 +2092,6 @@ namespace Microsoft.PowerShell.Commands
             return null;
         }
 
-
         /// <summary>
         /// Gives the provider a chance to attach additional parameters to the
         /// clear-itemproperty cmdlet.
@@ -2132,830 +2119,6 @@ namespace Microsoft.PowerShell.Commands
         #endregion Unimplemented methods
 
         #endregion IPropertyCmdletProvider
-
-#if SUPPORTS_IMULTIVALUEPROPERTYCMDLETPROVIDER
-
-        #region IMultivaluePropertyCmdletProvider
-
-        /// <summary>
-        /// Gets a value of a property from the item specified by the path.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// The path to the item from which the property value should be retrieved.
-        /// </param>
-        ///
-        /// <param name="propertyName">
-        /// The property to get the value from.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to get.
-        /// </param>
-        ///
-        /// <returns>
-        /// Nothing. A PSObject representing the property and value that was
-        /// retrieved should be passed to the WriteObject() method.
-        /// </returns>
-        ///
-        /// <remarks>
-        /// Implement this method when you are providing access to a data store
-        /// that allows multivalued properties.
-        /// </remarks>
-        ///
-        public void GetPropertyValueAt(
-            string path,
-            string propertyName,
-            object at)
-        {
-            if (path == null)
-            {
-                throw tracer.NewArgumentNullException("path");
-            }
-
-            if (!CheckOperationNotAllowedOnHiveContainer(path))
-            {
-                return;
-            }
-
-            IRegistryWrapper key = GetRegkeyForPathWriteIfError(path, false);
-
-            if (key == null)
-            {
-                return;
-            }
-
-            // Convert the at parameter to an int
-            int index = GetIndexFromAt(at);
-
-            if (index == -1)
-            {
-                // The key was not found, write out an error.
-
-                ArgumentException exception =
-                    new ArgumentException(
-                    RegistryProviderStrings.BadAtParam;
-                WriteError (new ErrorRecord (exception, exception.GetType().FullName, ErrorCategory.InvalidArgument, path));
-
-                return;
-            }
-
-            PSObject propertyResults = new PSObject();
-
-            try
-            {
-                string valueName = propertyName;
-
-                // Need to convert the default value name to "(default)"
-                if (String.IsNullOrEmpty(valueName))
-                {
-                    valueName = GetLocalizedDefaultToken();
-                }
-                object resultValue = key.GetValue(valueName);
-
-                if (resultValue != null)
-                {
-                    if (resultValue is IList &&
-                        at != null)
-                    {
-                        resultValue = ((IList)resultValue)[index];
-                    }
-
-                    propertyResults.Properties.Add(new PSNoteProperty(valueName, resultValue));
-
-                    WritePropertyObject(propertyResults, path);
-                }
-            }
-            catch (System.IO.IOException ioException)
-            {
-                // An exception occurred while trying to get the key. Write
-                // out the error.
-
-                WriteError (new ErrorRecord (ioException, ioException.GetType().FullName, ErrorCategory.ReadError, path));
-
-            }
-            catch (System.Security.SecurityException securityException)
-            {
-                // An exception occurred while trying to get the key. Write
-                // out the error.
-
-                WriteError (new ErrorRecord (securityException, securityException.GetType().FullName, ErrorCategory.PermissionDenied, path));
-            }
-            catch (System.UnauthorizedAccessException unauthorizedAccessException)
-            {
-                // An exception occurred while trying to get the key. Write
-                // out the error.
-
-                WriteError (new ErrorRecord (unauthorizedAccessException, unauthorizedAccessException.GetType().FullName, ErrorCategory.PermissionDenied, path));
-            }
-        } // GetPropertyValueAt
-
-
-
-        /// <summary>
-        /// Sets a property value on the item specified by the path.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// The path to the item on which the property should be set.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to set.
-        /// </param>
-        ///
-        /// <param name="propertyValue">
-        /// The property to set the value on.
-        /// </param>
-        ///
-        /// <returns>
-        /// Nothing. A PSObject representing the property and value that was
-        /// set should be passed to the WriteObject() method.
-        /// </returns>
-        ///
-        /// <remarks>
-        /// Implement this method when you are providing access to a data store
-        /// that allows multivalued properties.
-        /// </remarks>
-        ///
-        public void SetPropertyValueAt(
-            string path,
-            object at,
-            PSObject propertyValue)
-        {
-            if (path == null)
-            {
-                throw tracer.NewArgumentNullException("path");
-            }
-
-            if (!CheckOperationNotAllowedOnHiveContainer(path))
-            {
-                return;
-            }
-
-            if (propertyValue == null)
-            {
-                throw tracer.NewArgumentNullException("propertyValue");
-            }
-
-            // Convert the at parameter to an int
-            int index = GetIndexFromAt(at);
-
-            if (index == -1)
-            {
-                // The key was not found, write out an error.
-
-                ArgumentException exception =
-                    new ArgumentException(
-                    RegistryProviderStrings.BadAtParam;
-                WriteError (new ErrorRecord (exception, exception.GetType().FullName, ErrorCategory.InvalidArgument, path));
-
-                return;
-            }
-
-            IRegistryWrapper key = GetRegkeyForPathWriteIfError(path, true);
-
-            if (key == null)
-            {
-                return;
-            }
-
-            string action =
-                RegistryProviderStrings.SetPropertyValueAtAction;
-
-            string resourceTemplate =
-                    RegistryProviderStrings.SetPropertyValueAtResourceTemplate;
-            foreach (PSMemberInfo property in propertyValue.Properties)
-            {
-                try
-                {
-                    object newPropertyValue = property.Value;
-
-                    string resource =
-                        String.Format(
-                            Host.CurrentCulture,
-                            resourceTemplate,
-                            path,
-                            property.Name,
-                            at);
-
-                    if (ShouldProcess(resource, action))
-                    {
-                        string propertyNameToSet = GetPropertyName(property.Name);
-
-                        // First get the current value
-
-                        object currentValue = key.GetValue(propertyNameToSet);
-
-                        if (currentValue != null &&
-                            currentValue is IList)
-                        {
-                            ((IList)currentValue)[index] = newPropertyValue;
-                        }
-                        else
-                        {
-                            currentValue = newPropertyValue;
-                        }
-
-                        key.SetValue(propertyNameToSet, currentValue);
-
-                        // Now write out the value by getting the value from the store
-
-                        object value = key.GetValue(propertyNameToSet);
-
-                        PSObject result = new PSObject();
-                        result.Properties.Add(new PSNoteProperty(property.Name, newPropertyValue));
-
-                        WritePropertyObject(result, path);
-                    }
-                }
-                catch (System.IO.IOException ioException)
-                {
-                    // An exception occurred while trying to set the value. Write
-                    // out the error.
-
-                    WriteError (new ErrorRecord (ioException, ioException.GetType().FullName, ErrorCategory.WriteError, property.Name));
-                    continue;
-                }
-                catch (System.Security.SecurityException securityException)
-                {
-                    // An exception occurred while trying to set the value. Write
-                    // out the error.
-
-                    WriteError (new ErrorRecord (securityException, securityException.GetType().FullName, ErrorCategory.PermissionDenied, property.Name));
-                    continue;
-                }
-                catch (System.UnauthorizedAccessException unauthorizedAccessException)
-                {
-                    // An exception occurred while trying to get the key. Write
-                    // out the error.
-
-                    WriteError (new ErrorRecord (unauthorizedAccessException, unauthorizedAccessException.GetType().FullName, ErrorCategory.PermissionDenied, property.Name));
-                    continue;
-                }
-
-
-            }
-        } // SetPropertyValueAt
-
-
-        /// <summary>
-        /// Clears the specified value of a property on the item specified by the path.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// The path to the item from which the property value should be cleared.
-        /// </param>
-        ///
-        /// <param name="propertyName">
-        /// The property to clear the value from.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to clear.
-        /// </param>
-        ///
-        /// <returns>
-        /// Nothing. A PSObject representing the property and value that was
-        /// retrieved should be passed to the WriteObject() method.
-        /// </returns>
-        ///
-        /// <remarks>
-        /// Implement this method when you are providing access to a data store
-        /// that allows multivalued properties.
-        /// </remarks>
-        ///
-        public void ClearPropertyValueAt(
-            string path,
-            string propertyName,
-            object at)
-        {
-            throw tracer.NewNotImplementedException();
-        }
-
-
-        /// <summary>
-        /// Removes the specified value of a property on the item specified by the path.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// The path to the item from which the property value should be removed.
-        /// </param>
-        ///
-        /// <param name="propertyName">
-        /// The property to remove the value from.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property value to remove.
-        /// </param>
-        ///
-        /// <returns>
-        /// Nothing. A PSObject representing the property and value that was
-        /// removed should be passed to the WriteObject() method.
-        /// </returns>
-        ///
-        /// <remarks>
-        /// Implement this method when you are providing access to a data store
-        /// that allows multivalued properties.
-        /// </remarks>
-        ///
-        public void RemovePropertyValueAt(
-            string path,
-            string propertyName,
-            object at)
-        {
-            if (path == null)
-            {
-                throw tracer.NewArgumentNullException("path");
-            }
-
-            if (!CheckOperationNotAllowedOnHiveContainer(path))
-            {
-                return;
-            }
-
-            // Convert the at parameter to an int
-            int index = GetIndexFromAt(at);
-
-            if (index == -1)
-            {
-                // The key was not found, write out an error.
-
-                ArgumentException exception =
-                    new ArgumentException(
-                    RegistryProviderStrings.BadAtParam);
-                WriteError (new ErrorRecord (exception, exception.GetType().FullName, ErrorCategory.InvalidArgument, path));
-
-                return;
-            }
-
-            IRegistryWrapper key = GetRegkeyForPathWriteIfError(path, true);
-
-            if (key == null)
-            {
-                return;
-            }
-
-            string action = RegistryProviderStrings.RemovePropertyValueAtAction;
-
-            string resourceTemplate = RegistryProviderStrings.RemovePropertyValueAtResourceTemplate;
-
-            string resource =
-                String.Format(
-                    Host.CurrentCulture,
-                    resourceTemplate,
-                    path,
-                    propertyName,
-                    at);
-
-            if (ShouldProcess(resource, action))
-            {
-                try
-                {
-                    string propertyNameToRemove = GetPropertyName(propertyName);
-
-                    // First get the current value
-
-                    object currentValue = key.GetValue(propertyNameToRemove);
-
-                    if (currentValue != null &&
-                        currentValue is string[])
-                    {
-                        ArrayList newValueArrayList = new ArrayList((string[])currentValue);
-                        newValueArrayList.RemoveAt(index);
-                        currentValue = newValueArrayList.ToArray(typeof(string));
-                    }
-                    else if (currentValue != null &&
-                        currentValue is byte[])
-                    {
-                        ArrayList newValueArrayList = new ArrayList((byte[])currentValue);
-                        newValueArrayList.RemoveAt(index);
-                        currentValue = newValueArrayList.ToArray(typeof(byte));
-                    }
-                    else
-                    {
-                        Exception e =
-                            new ArgumentException (
-                                RegistryProviderStrings.PropertyNotMultivalued);
-                        WriteError (new ErrorRecord (
-                            e,
-                            e.GetType().FullName,
-                            ErrorCategory.InvalidOperation,
-                            propertyNameToRemove));
-                        return;
-                    }
-
-                    key.SetValue(propertyNameToRemove, currentValue);
-                }
-                catch (System.IO.IOException ioException)
-                {
-                    // An exception occurred while trying to set the value. Write
-                    // out the error.
-
-                    WriteError (new ErrorRecord (ioException, ioException.GetType().FullName, ErrorCategory.WriteError, propertyName));
-                }
-                catch (System.Security.SecurityException securityException)
-                {
-                    // An exception occurred while trying to set the value. Write
-                    // out the error.
-
-                    WriteError (new ErrorRecord (securityException, securityException.GetType().FullName, ErrorCategory.PermissionDenied, propertyName));
-                }
-                catch (System.UnauthorizedAccessException unauthorizedAccessException)
-                {
-                    // An exception occurred while trying to get the key. Write
-                    // out the error.
-
-                    WriteError (new ErrorRecord (unauthorizedAccessException, unauthorizedAccessException.GetType().FullName, ErrorCategory.PermissionDenied, propertyName));
-                }
-
-            }
-        } // RemovePropertyValueAt
-
-        /// <summary>
-        /// Adds a property value on the item specified by the path.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// The path to the item on which the property should be added.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to add.
-        /// </param>
-        ///
-        /// <param name="propertyValue">
-        /// The property to add the value on.
-        /// </param>
-        ///
-        /// <returns>
-        /// Nothing. A PSObject representing the property and value that was
-        /// added should be passed to the WriteObject() method.
-        /// </returns>
-        ///
-        /// <remarks>
-        /// Implement this method when you are providing access to a data store
-        /// that allows multivalued properties.
-        /// </remarks>
-        ///
-        public void AddPropertyValueAt(
-            string path,
-            object at,
-            PSObject propertyValue)
-        {
-            if (path == null)
-            {
-                throw tracer.NewArgumentNullException("path");
-            }
-
-            if (!CheckOperationNotAllowedOnHiveContainer(path))
-            {
-                return;
-            }
-
-            if (propertyValue == null)
-            {
-                throw tracer.NewArgumentNullException("propertyValue");
-            }
-
-            // Convert the at parameter to an int
-            int index = GetIndexFromAt(at);
-
-            IRegistryWrapper key = GetRegkeyForPathWriteIfError(path, true);
-
-            if (key == null)
-            {
-                return;
-            }
-
-            string action = RegistryProviderStrings.AddPropertyValueAtAction;
-
-            string resourceTemplate = RegistryProviderStrings.AddPropertyValueAtResourceTemplate;
-
-            PSMemberInfoCollection properties = null;
-
-            try
-            {
-                properties = propertyValue.Properties;
-            }
-            catch (System.IO.IOException ioException)
-            {
-                // An exception occurred while trying to get the key. Write
-                // out the error.
-
-                WriteError (new ErrorRecord (ioException, ioException.GetType().FullName, ErrorCategory.ReadError, path));
-                return;
-            }
-            catch (System.Security.SecurityException securityException)
-            {
-                // An exception occurred while trying to get the key. Write
-                // out the error.
-
-                WriteError (new ErrorRecord (securityException, securityException.GetType().FullName, ErrorCategory.PermissionDenied, path));
-                return;
-            }
-            catch (System.UnauthorizedAccessException unauthorizedAccessException)
-            {
-                // An exception occurred while trying to get the key. Write
-                // out the error.
-
-                WriteError (new ErrorRecord (unauthorizedAccessException, unauthorizedAccessException.GetType().FullName, ErrorCategory.PermissionDenied, path));
-                return;
-            }
-
-
-            foreach (PSMemberInfo property in properties)
-            {
-                object newPropertyValue = property.Value;
-
-                string resource =
-                    String.Format(
-                        Host.CurrentCulture,
-                        resourceTemplate,
-                        path,
-                        property.Name,
-                        at);
-
-                if (ShouldProcess(resource, action))
-                {
-                    string propertyNameToSet = GetPropertyName(property.Name);
-
-                    // First get the current value
-
-                    object currentValue = null;
-
-                    try
-                    {
-                        currentValue = key.GetValue(propertyNameToSet);
-                    }
-                    catch (System.IO.IOException ioException)
-                    {
-                        // An exception occurred while trying to set the value. Write
-                        // out the error.
-
-                        WriteError (new ErrorRecord (ioException, ioException.GetType().FullName, ErrorCategory.ReadError, property.Name));
-                        continue;
-                    }
-                    catch (System.Security.SecurityException securityException)
-                    {
-                        // An exception occurred while trying to set the value. Write
-                        // out the error.
-
-                        WriteError (new ErrorRecord (securityException, securityException.GetType().FullName, ErrorCategory.PermissionDenied, property.Name));
-                        continue;
-                    }
-                    catch (System.UnauthorizedAccessException unauthorizedAccessException)
-                    {
-                        // An exception occurred while trying to get the key. Write
-                        // out the error.
-
-                        WriteError (new ErrorRecord (unauthorizedAccessException, unauthorizedAccessException.GetType().FullName, ErrorCategory.PermissionDenied, property.Name));
-                        continue;
-                    }
-
-                    if (currentValue != null &&
-                        currentValue is string[])
-                    {
-                        ArrayList newValueArrayList = new ArrayList((string[])currentValue);
-
-                        if (index == -1 || index >= newValueArrayList.Count)
-                        {
-                            newValueArrayList.Add(newPropertyValue.ToString());
-                        }
-                        else
-                        {
-                            newValueArrayList.Insert(index, newPropertyValue.ToString());
-                        }
-                        currentValue = newValueArrayList.ToArray(typeof(string));
-                    }
-                    else if (currentValue != null && currentValue is byte[])
-                    {
-                        ArrayList newValueArrayList = new ArrayList((byte[])currentValue);
-
-                        if (index == -1 || index >= newValueArrayList.Count)
-                        {
-                            newValueArrayList.Add((byte)newPropertyValue);
-                        }
-                        else
-                        {
-                            newValueArrayList.Insert(index, (byte)newPropertyValue);
-                        }
-                        currentValue = newValueArrayList.ToArray(typeof(byte));
-                    }
-                    else
-                    {
-                        Exception e =
-                            new ArgumentException (
-                                RegistryProviderStrings.PropertyNotMultivaluedChange);
-                        WriteError (new ErrorRecord (
-                            e,
-                            e.GetType().FullName,
-                            ErrorCategory.InvalidOperation,
-                            propertyNameToSet));
-                        continue;
-                    }
-
-                    try
-                    {
-                        key.SetValue(propertyNameToSet, currentValue);
-
-                        // Now write out the value by getting the value from the store
-
-                        object value = key.GetValue(propertyNameToSet);
-
-                        PSObject result = new PSObject();
-                        result.Properties.Add(new PSNoteProperty(property.Name, value));
-
-                        WritePropertyObject(result, path);
-                    }
-                    catch (System.IO.IOException ioException)
-                    {
-                        // An exception occurred while trying to set the value. Write
-                        // out the error.
-
-                        WriteError (new ErrorRecord (ioException, ioException.GetType().FullName, ErrorCategory.WriteError, property.Name));
-                    }
-                    catch (System.Security.SecurityException securityException)
-                    {
-                        // An exception occurred while trying to set the value. Write
-                        // out the error.
-
-                        WriteError (new ErrorRecord (securityException, securityException.GetType().FullName, ErrorCategory.PermissionDenied, property.Name));
-                    }
-                    catch (System.UnauthorizedAccessException unauthorizedAccessException)
-                    {
-                        // An exception occurred while trying to get the key. Write
-                        // out the error.
-
-                        WriteError (new ErrorRecord (unauthorizedAccessException, unauthorizedAccessException.GetType().FullName, ErrorCategory.PermissionDenied, property.Name));
-                    }
-                } // if ShouldProcess
-            }
-        } // RemovePropertyValueAt
-
-        #region Unimplemented methods
-
-        /// <summary>
-        /// Gives the provider a chance to attach additional parameters to the
-        /// get-propertyvalue cmdlet.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// If the path was specified on the command line, this is the path
-        /// to the item to get the dynamic parameters for.
-        /// </param>
-        ///
-        /// <param name="propertyName">
-        /// The property to get the value from.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to get.
-        /// </param>
-        ///
-        /// <returns>
-        /// An object that has properties and fields decorated with
-        /// parsing attributes similar to a cmdlet class.
-        /// </returns>
-        ///
-        public object GetPropertyValueAtDynamicParameters(
-            string path,
-            string propertyName,
-            object at)
-        {
-            return null;
-        }
-
-        /// <summary>
-        /// Gives the provider a chance to attach additional parameters to the
-        /// set-propertyvalue cmdlet.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// If the path was specified on the command line, this is the path
-        /// to the item to get the dynamic parameters for.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to get.
-        /// </param>
-        ///
-        /// <param name="propertyValue">
-        /// The property to set the value on.
-        /// </param>
-        ///
-        /// <returns>
-        /// An object that has properties and fields decorated with
-        /// parsing attributes similar to a cmdlet class.
-        /// </returns>
-        ///
-        public object SetPropertyValueAtDynamicParameters(
-            string path,
-            object at,
-            PSObject propertyValue)
-        {
-            return null;
-        }
-
-
-        /// <summary>
-        /// Gives the provider a chance to attach additional parameters to the
-        /// clear-propertyvalue cmdlet.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// If the path was specified on the command line, this is the path
-        /// to the item to get the dynamic parameters for.
-        /// </param>
-        ///
-        /// <param name="propertyName">
-        /// The property to clear the value from.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to clear.
-        /// </param>
-        ///
-        /// <returns>
-        /// An object that has properties and fields decorated with
-        /// parsing attributes similar to a cmdlet class.
-        /// </returns>
-        ///
-        public object ClearPropertyValueAtDynamicParameters(
-            string path,
-            string propertyName,
-            object at)
-        {
-            return null;
-        }
-
-        /// <summary>
-        /// Gives the provider a chance to attach additional parameters to the
-        /// remove-propertyvalue cmdlet.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// If the path was specified on the command line, this is the path
-        /// to the item to get the dynamic parameters for.
-        /// </param>
-        ///
-        /// <param name="propertyName">
-        /// The property to remove the value from.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to remove.
-        /// </param>
-        ///
-        /// <returns>
-        /// An object that has properties and fields decorated with
-        /// parsing attributes similar to a cmdlet class.
-        /// </returns>
-        ///
-        public object RemovePropertyValueAtDynamicParameters(
-            string path,
-            string propertyName,
-            object at)
-        {
-            return null;
-        }
-
-        /// <summary>
-        /// Gives the provider a chance to attach additional parameters to the
-        /// add-propertyvalue cmdlet.
-        /// </summary>
-        ///
-        /// <param name="path">
-        /// If the path was specified on the command line, this is the path
-        /// to the item to get the dynamic parameters for.
-        /// </param>
-        ///
-        /// <param name="at">
-        /// The position of the property to add.
-        /// </param>
-        ///
-        /// <param name="propertyValue">
-        /// The property to add the value on.
-        /// </param>
-        ///
-        /// <returns>
-        /// An object that has properties and fields decorated with
-        /// parsing attributes similar to a cmdlet class.
-        /// </returns>
-        ///
-        public object AddPropertyValueAtDynamicParameters(
-            string path,
-            object at,
-            PSObject propertyValue)
-        {
-            return null;
-        }
-
-        #endregion Unimplemented method
-
-        #endregion IMultivaluePropertyCmdletProvider
-#endif // SUPPORTS_IMULTIVALUEPROPERTYCMDLETPROVIDER
 
         #region IDynamicPropertyCmdletProvider
 
@@ -3190,7 +2353,6 @@ namespace Microsoft.PowerShell.Commands
             WriteErrorIfPerfectMatchNotFound(hadAMatch, path, propertyName);
         }
 
-
         /// <summary>
         /// Renames a property of the item at the specified <paramref name="path"/>.
         /// </summary>
@@ -3278,7 +2440,6 @@ namespace Microsoft.PowerShell.Commands
 
             key.Close();
         }
-
 
         /// <summary>
         /// Copies a property of the item at the specified <paramref name="path"/> to a new property on the
@@ -3385,7 +2546,6 @@ namespace Microsoft.PowerShell.Commands
             key.Close();
         }
 
-
         /// <summary>
         /// Moves a property on an item specified by <paramref name="sourcePath"/>.
         /// </summary>
@@ -3491,7 +2651,6 @@ namespace Microsoft.PowerShell.Commands
             destinationKey.Close();
         }
 
-
         /// <summary>
         /// Gets the parent path of the given <paramref name="path"/>.
         /// </summary>
@@ -3593,7 +2752,6 @@ namespace Microsoft.PowerShell.Commands
 
             return result;
         }
-
 
         #region Unimplemented methods
 
@@ -3761,7 +2919,6 @@ namespace Microsoft.PowerShell.Commands
 
         #endregion IDynamicPropertyCmdletProvider
 
-
         #region Private members
 
         private void CopyProperty(
@@ -3908,7 +3065,6 @@ namespace Microsoft.PowerShell.Commands
                 throw PSTraceSource.NewArgumentException("path");
             }
 
-
             filteredCollection = new Collection<string>();
             key = GetRegkeyForPathWriteIfError(path, writeAccess);
 
@@ -4007,7 +3163,6 @@ namespace Microsoft.PowerShell.Commands
                 WriteErrorIfPerfectMatchNotFound(hadAMatch, path, requestedValueName);
             } // foreach
         }
-
 
         private void WriteErrorIfPerfectMatchNotFound(bool hadAMatch, string path, string requestedValueName)
         {
@@ -4609,7 +3764,6 @@ namespace Microsoft.PowerShell.Commands
             SetRegistryValue(key, propertyName, value, kind, path, true);
         }
 
-
         /// <summary>
         /// Sets or creates a registry value on a key.
         /// </summary>
@@ -4710,7 +3864,6 @@ namespace Microsoft.PowerShell.Commands
                 WriteWrappedPropertyObject(newValue, propertyName, path);
             }
         } // SetRegistryValue
-
 
         /// <summary>
         /// helper to wrap property values when sent to the pipeline into an PSObject;

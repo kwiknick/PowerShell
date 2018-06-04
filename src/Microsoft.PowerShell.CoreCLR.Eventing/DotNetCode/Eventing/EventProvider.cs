@@ -1,8 +1,5 @@
-//------------------------------------------------------------------------------
-// <copyright file="etwprovider.cs" company="Microsoft">
-//     Copyright (c) Microsoft Corporation.  All rights reserved.
-// </copyright>
-//------------------------------------------------------------------------------
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -209,10 +206,10 @@ namespace System.Diagnostics.Eventing
         /// IsEnabled, method used to test if event is enabled
         /// </summary>
         /// <param name="level">
-        /// Level  to test
+        /// Level to test
         /// </param>
         /// <param name="keywords">
-        /// Keyword  to test
+        /// Keyword to test
         /// </param>
         public bool IsEnabled(byte level, long keywords)
         {
@@ -265,7 +262,6 @@ namespace System.Diagnostics.Eventing
                     break;
             }
         }
-
 
         [System.Security.SecurityCritical]
         private static unsafe string EncodeObject(ref object data, EventData* dataDescriptor, byte* dataBuffer)
@@ -427,19 +423,18 @@ namespace System.Diagnostics.Eventing
             return null;
         }
 
-
         /// <summary>
         /// WriteMessageEvent, method to write a string with level and Keyword.
         /// The activity ID will be propagated only if the call stays on the same native thread as SetActivityId().
         /// </summary>
         /// <param name="eventMessage">
-        /// Message  to write
+        /// Message to write
         /// </param>
         /// <param name="eventLevel">
-        /// Level  to test
+        /// Level to test
         /// </param>
         /// <param name="eventKeywords">
-        /// Keyword  to test
+        /// Keyword to test
         /// </param>
         [System.Security.SecurityCritical]
         public bool WriteMessageEvent(string eventMessage, byte eventLevel, long eventKeywords)
@@ -486,7 +481,6 @@ namespace System.Diagnostics.Eventing
         {
             return WriteMessageEvent(eventMessage, 0, 0);
         }
-
 
         /// <summary>
         /// WriteEvent method to write parameters with event schema properties
@@ -569,7 +563,7 @@ namespace System.Diagnostics.Eventing
         /// number of event descriptors
         /// </param>
         /// <param name="data">
-        /// pointer  do the event data
+        /// pointer do the event data
         /// </param>
         [System.Security.SecurityCritical]
         protected bool WriteEvent(ref EventDescriptor eventDescriptor, int dataCount, IntPtr data)
@@ -596,7 +590,6 @@ namespace System.Diagnostics.Eventing
             }
             return true;
         }
-
 
         /// <summary>
         /// WriteTransferEvent, method to write a parameters with event schema properties
@@ -766,7 +759,6 @@ namespace System.Diagnostics.Eventing
         {
             return t_activityId;
         }
-
 
         [System.Security.SecurityCritical]
         public static void SetActivityId(ref Guid id)

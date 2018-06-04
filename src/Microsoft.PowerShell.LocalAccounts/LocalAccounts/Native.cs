@@ -1,4 +1,7 @@
-﻿using System;
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -155,13 +158,12 @@ namespace System.Management.Automation.SecurityAccountsManager.Native
         {
             if (objectName != IntPtr.Zero)
             {
-                ClrFacade.DestroyStructure<UNICODE_STRING>(objectName);
+                Marshal.DestroyStructure<UNICODE_STRING>(objectName);
                 Marshal.FreeHGlobal(objectName);
                 objectName = IntPtr.Zero;
             }
         }
     }
-
 
 // These structures are filled in by Marshalling, so fields will be initialized
 // invisibly to the C# compiler, and some fields will not be used in C# code.
@@ -179,73 +181,6 @@ namespace System.Management.Automation.SecurityAccountsManager.Native
 #pragma warning restore 0649, 0169
     #endregion Structures
 
-    /// <summary>
-    /// Wraps calls to Marshal functions that differ between .Net 4.5 and CoreCLR. .Net 4.5.1 types are not allowed for PowerShell.
-    /// </summary>
-    internal class ClrFacade
-    {
-        /// <summary>
-        /// Private constructor to prevent auto-generation of a default constructor
-        /// </summary>
-        private ClrFacade()
-        {
-        }
-
-        /// <summary>
-        /// Facade for Marshal.SizeOf
-        /// </summary>
-        internal static int SizeOf<T>()
-        {
-#if CORECLR
-            // Marshal.SizeOf(Type) is obsolete in CoreCLR
-            return Marshal.SizeOf<T>();
-#else
-            return Marshal.SizeOf(typeof(T));
-#endif
-        }
-
-        /// <summary>
-        /// Facade for Marshal.DestroyStructure
-        /// </summary>
-        internal static void DestroyStructure<T>(IntPtr ptr)
-        {
-#if CORECLR
-            // Marshal.DestroyStructure(IntPtr, Type) is obsolete in CoreCLR
-            Marshal.DestroyStructure<T>(ptr);
-#else
-            Marshal.DestroyStructure(ptr, typeof(T));
-#endif
-        }
-
-        /// <summary>
-        /// Facade for Marshal.PtrToStructure
-        /// </summary>
-        internal static T PtrToStructure<T>(IntPtr ptr)
-        {
-#if CORECLR
-            // Marshal.PtrToStructure(IntPtr, Type) is obsolete in CoreCLR
-            return Marshal.PtrToStructure<T>(ptr);
-#else
-            return (T)Marshal.PtrToStructure(ptr, typeof(T));
-#endif
-        }
-
-        /// <summary>
-        /// Wraps Marshal.StructureToPtr to hide differences between the CLRs.
-        /// </summary>
-        internal static void StructureToPtr<T>(
-            T structure,
-            IntPtr ptr,
-            bool deleteOld)
-        {
-#if CORECLR
-            Marshal.StructureToPtr<T>( structure, ptr, deleteOld );
-#else
-            Marshal.StructureToPtr(structure, ptr, deleteOld);
-#endif
-        }
-    }
-
     internal static class Win32
     {
         #region Constants
@@ -262,7 +197,6 @@ namespace System.Management.Automation.SecurityAccountsManager.Native
         internal const UInt32 STANDARD_RIGHTS_WRITE     = READ_CONTROL;
         internal const UInt32 STANDARD_RIGHTS_EXECUTE   = READ_CONTROL;
 
-
         internal const UInt32 STANDARD_RIGHTS_ALL       = 0x001F0000;
 
         internal const UInt32 SPECIFIC_RIGHTS_ALL       = 0x0000FFFF;
@@ -275,7 +209,6 @@ namespace System.Management.Automation.SecurityAccountsManager.Native
         internal const UInt32 GENERIC_WRITE             = 0x40000000;
         internal const UInt32 GENERIC_EXECUTE           = 0x20000000;
         internal const UInt32 GENERIC_ALL               = 0x10000000;
-
 
         // These constants control the behavior of the FormatMessage Windows API function
         internal const uint FORMAT_MESSAGE_ALLOCATE_BUFFER  = 0x00000100;
@@ -402,7 +335,6 @@ namespace System.Management.Automation.SecurityAccountsManager.Native
         internal const int NERR_LastAdmin               = NERR_BASE + 352;  // This operation is not allowed on the last administrative account.
         #endregion Win32 Error Codes
 
-
         #region SECURITY_DESCRIPTOR Control Flags
         internal const UInt16 SE_DACL_PRESENT           = 0x0004;
         internal const UInt16 SE_SELF_RELATIVE          = 0x8000;
@@ -432,7 +364,6 @@ namespace System.Management.Automation.SecurityAccountsManager.Native
                                                       StringBuilder domainName,
                                                       ref uint domainNameLength,
                                                       out SID_NAME_USE peUse);
-
 
         [DllImport(PInvokeDllNames.GetSecurityDescriptorDaclDllName, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

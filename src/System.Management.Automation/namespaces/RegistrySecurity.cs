@@ -1,7 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 #if !UNIX
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
 
 using System;
 using System.Management.Automation;
@@ -22,9 +21,6 @@ namespace Microsoft.PowerShell.Commands
     public sealed partial class RegistryProvider :
         NavigationCmdletProvider,
         IPropertyCmdletProvider,
-#if SUPPORTS_IMULTIVALUEPROPERTYCMDLETPROVIDER
-        IMultivaluePropertyCmdletProvider,
-#endif
         IDynamicPropertyCmdletProvider,
         ISecurityDescriptorCmdletProvider
     {

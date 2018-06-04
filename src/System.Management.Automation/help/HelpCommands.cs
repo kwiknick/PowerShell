@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -204,37 +203,13 @@ namespace Microsoft.PowerShell.Commands
         }
         private bool _showOnlineHelp;
 
-        private bool _showWindow;
-        /// <summary>
-        /// Gets and sets a value indicating whether the help should be displayed in a separate window
-        /// </summary>
-        [Parameter(ParameterSetName = "ShowWindow", Mandatory = true)]
-        public SwitchParameter ShowWindow
-        {
-            get
-            {
-                return _showWindow;
-            }
-
-            set
-            {
-                _showWindow = value;
-                if (_showWindow)
-                {
-                    VerifyParameterForbiddenInRemoteRunspace(this, "ShowWindow");
-                }
-            }
-        }
-
         // The following variable controls the view.
         private HelpView _viewTokenToAdd = HelpView.Default;
 
-#if !CORECLR
-        private GraphicalHostReflectionWrapper graphicalHostReflectionWrapper;
-#endif
-
         private readonly Stopwatch _timer = new Stopwatch();
+#if LEGACYTELEMETRY
         private bool _updatedHelp;
+#endif
 
         #endregion
 
@@ -252,7 +227,9 @@ namespace Microsoft.PowerShell.Commands
                 if (ShouldContinue(HelpDisplayStrings.UpdateHelpPromptBody, HelpDisplayStrings.UpdateHelpPromptTitle))
                 {
                     System.Management.Automation.PowerShell.Create(RunspaceMode.CurrentRunspace).AddCommand("Update-Help").Invoke();
+#if LEGACYTELEMETRY
                     _updatedHelp = true;
+#endif
                 }
 
                 UpdatableHelpSystem.SetDisablePromptToUpdateHelp();
@@ -266,12 +243,6 @@ namespace Microsoft.PowerShell.Commands
         {
             try
             {
-#if !CORECLR
-                if (this.ShowWindow)
-                {
-                    this.graphicalHostReflectionWrapper = GraphicalHostReflectionWrapper.GetGraphicalHostReflectionWrapper(this, "Microsoft.PowerShell.Commands.Internal.HelpWindowHelper");
-                }
-#endif
                 this.Context.HelpSystem.OnProgress += new HelpSystem.HelpProgressHandler(HelpSystem_OnProgress);
 
                 bool failed = false;
@@ -332,9 +303,10 @@ namespace Microsoft.PowerShell.Commands
 
                 _timer.Stop();
 
+#if LEGACYTELEMETRY
                 if (!string.IsNullOrEmpty(Name))
                     Microsoft.PowerShell.Telemetry.Internal.TelemetryAPI.ReportGetHelpTelemetry(Name, countOfHelpInfos, _timer.ElapsedMilliseconds, _updatedHelp);
-
+#endif
                 // Write full help as there is only one help info object
                 if (1 == countOfHelpInfos)
                 {
@@ -563,12 +535,6 @@ namespace Microsoft.PowerShell.Commands
                         throw PSTraceSource.NewInvalidOperationException(HelpErrors.NoURIFound);
                     }
                 }
-                else if (showFullHelp && ShowWindow)
-                {
-#if !CORECLR
-                    graphicalHostReflectionWrapper.CallStaticMethod("ShowHelpWindow", helpInfo.FullHelp, this);
-#endif
-                }
                 else
                 {
                     // show inline help
@@ -634,10 +600,10 @@ namespace Microsoft.PowerShell.Commands
                 this.WriteVerbose(string.Format(CultureInfo.InvariantCulture, HelpDisplayStrings.OnlineHelpUri, uriToLaunch.OriginalString));
                 System.Diagnostics.Process browserProcess = new System.Diagnostics.Process();
 #if UNIX
-                browserProcess.StartInfo.FileName = Platform.IsLinux ? "xdg-open" : /* OS X */ "open";
+                browserProcess.StartInfo.FileName = Platform.IsLinux ? "xdg-open" : /* macOS */ "open";
                 browserProcess.StartInfo.Arguments = uriToLaunch.OriginalString;
                 browserProcess.Start();
-#elif CORECLR
+#else
                 if (Platform.IsNanoServer || Platform.IsIoT)
                 {
                     // We cannot open the URL in browser on headless SKUs.
@@ -648,11 +614,9 @@ namespace Microsoft.PowerShell.Commands
                 {
                     // We can call ShellExecute directly on Full Windows.
                     browserProcess.StartInfo.FileName = uriToLaunch.OriginalString;
-                    ShellExecuteHelper.Start(browserProcess.StartInfo);
+                    browserProcess.StartInfo.UseShellExecute = true;
+                    browserProcess.Start();
                 }
-#else
-                browserProcess.StartInfo.FileName = uriToLaunch.OriginalString;
-                browserProcess.Start();
 #endif
             }
             catch (InvalidOperationException ioe)
@@ -684,22 +648,13 @@ namespace Microsoft.PowerShell.Commands
             WriteProgress(record);
         }
 
-#if !CORECLR
-        [DllImport("wininet.dll")]
-        private static extern bool InternetGetConnectedState(out int desc, int reserved);
-#endif
         /// <summary>
         /// Checks if we can connect to the internet
         /// </summary>
         /// <returns></returns>
         private bool HasInternetConnection()
         {
-#if CORECLR
             return true; // TODO:CORECLR wininet.dll is not present on NanoServer
-#else
-            int unused;
-            return InternetGetConnectedState(out unused, 0);
-#endif
         }
 
         #region Helper methods for verification of parameters against NoLanguage mode

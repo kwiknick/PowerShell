@@ -1,7 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #if !UNIX
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
 
 using System;
 using System.Management.Automation;
@@ -566,11 +566,7 @@ namespace Microsoft.PowerShell.Commands
                 {
                     if (s_certPathRegex == null)
                     {
-                        RegexOptions options = RegexOptions.IgnoreCase;
-
-#if !CORECLR
-                        options |= RegexOptions.Compiled;
-#endif
+                        RegexOptions options = RegexOptions.IgnoreCase | RegexOptions.Compiled;
                         s_certPathRegex = new Regex(certPathPattern, options);
                     }
                 }
@@ -617,7 +613,6 @@ namespace Microsoft.PowerShell.Commands
                 }
             }
         } // constructor
-
 
         /// <summary>
         /// Removes an item at the specified path
@@ -1325,7 +1320,6 @@ namespace Microsoft.PowerShell.Commands
                 return;
             }
 
-
             CommandInfo commandInfo =
                 new CmdletInfo(
                     "Import-Module",
@@ -1372,7 +1366,6 @@ namespace Microsoft.PowerShell.Commands
             string result = null;
 
             int separatorIndex = path.LastIndexOf(StringLiterals.DefaultPathSeparator);
-
 
             // Since there was no path separator return the entire path
             if (separatorIndex == -1)
@@ -1609,7 +1602,7 @@ namespace Microsoft.PowerShell.Commands
         {
             IntPtr hProv = IntPtr.Zero;
             Security.NativeMethods.CRYPT_KEY_PROV_INFO keyProvInfo =
-                ClrFacade.PtrToStructure<Security.NativeMethods.CRYPT_KEY_PROV_INFO>(pProvInfo);
+                Marshal.PtrToStructure<Security.NativeMethods.CRYPT_KEY_PROV_INFO>(pProvInfo);
 
             IntPtr hWnd = DetectUIHelper.GetOwnerWindow(Host);
 
@@ -1896,7 +1889,7 @@ namespace Microsoft.PowerShell.Commands
                 if (sourcePath.Contains("UserDS"))
                 {
                     Security.NativeMethods.CERT_CONTEXT context =
-                        ClrFacade.PtrToStructure<Security.NativeMethods.CERT_CONTEXT>(cert.Handle);
+                        Marshal.PtrToStructure<Security.NativeMethods.CERT_CONTEXT>(cert.Handle);
 
                     CommitUserDS(context.hCertStore);
                 }
@@ -1990,7 +1983,7 @@ namespace Microsoft.PowerShell.Commands
 
             if (sourcePath.Contains("UserDS"))
             {
-                Security.NativeMethods.CERT_CONTEXT context = ClrFacade.PtrToStructure<Security.NativeMethods.CERT_CONTEXT>(cert.Handle);
+                Security.NativeMethods.CERT_CONTEXT context = Marshal.PtrToStructure<Security.NativeMethods.CERT_CONTEXT>(cert.Handle);
 
                 CommitUserDS(context.hCertStore);
             }
@@ -2221,7 +2214,6 @@ namespace Microsoft.PowerShell.Commands
             path = NormalizePath(path);
             GetChildItemsOrNames(path, false, returnContainers, true, GetFilter());
         } // GetChildNames
-
 
         /// <summary>
         /// Determines if the item at the specified path is a store
@@ -2516,13 +2508,7 @@ namespace Microsoft.PowerShell.Commands
                     }
                     else
                     {
-#if CORECLR
-                        //TODO:CORECLR See if there is a need to create a copy of cert like its done on Full PS
-                        X509Certificate2 cert2 = cert;
-#else
-                        X509Certificate2 cert2 = new X509Certificate2(cert);
-#endif
-                        PSObject myPsObj = new PSObject(cert2);
+                        PSObject myPsObj = new PSObject(cert);
                         thingToReturn = (object)myPsObj;
                     }
                     WriteItemObject(thingToReturn, certPath, false);
@@ -2876,9 +2862,7 @@ namespace Microsoft.PowerShell.Commands
                     currentUICulture.ToString(),
                     this.ProviderInfo.HelpFile);
                 XmlReaderSettings settings = new XmlReaderSettings();
-#if !CORECLR
                 settings.XmlResolver = null;
-#endif
                 using (XmlReader reader = XmlReader.Create(fullHelpPath, settings))
                 {
                     document.Load(reader);
@@ -2888,7 +2872,6 @@ namespace Microsoft.PowerShell.Commands
                 XmlNamespaceManager nsMgr = new XmlNamespaceManager(document.NameTable);
                 nsMgr.AddNamespace("msh", HelpCommentsParser.mshURI);
                 nsMgr.AddNamespace("command", HelpCommentsParser.commandURI);
-
 
                 // Compose XPath query to select the appropriate node based on the cmdlet
                 string xpathQuery = String.Format(
@@ -3257,7 +3240,6 @@ namespace Microsoft.PowerShell.Commands
     {
         private List<EnhancedKeyUsageRepresentation> _ekuList = new List<EnhancedKeyUsageRepresentation>();
 
-
         /// <summary>
         /// get property of EKUList
         /// </summary>
@@ -3270,7 +3252,7 @@ namespace Microsoft.PowerShell.Commands
         }
 
         /// <summary>
-        /// constructor for  EnhancedKeyUsageProperty
+        /// constructor for EnhancedKeyUsageProperty
         /// </summary>
         public EnhancedKeyUsageProperty(X509Certificate2 cert)
         {
@@ -3329,7 +3311,7 @@ namespace Microsoft.PowerShell.Commands
             // extract DNS name from subject distinguish name
             // if it exists and does not contain a comma
             // a comma, indicates it is not a DNS name
-            if(cert.Subject.StartsWith(distinguishedNamePrefix, System.StringComparison.InvariantCultureIgnoreCase) && 
+            if(cert.Subject.StartsWith(distinguishedNamePrefix, System.StringComparison.InvariantCultureIgnoreCase) &&
                 cert.Subject.IndexOf(",",System.StringComparison.InvariantCulture)==-1)
             {
                 name = cert.Subject.Substring(distinguishedNamePrefix.Length);
@@ -3382,7 +3364,6 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-
 
     /// <summary>
     /// downlevel helper function to determine if the OS is WIN8 and above
@@ -3537,7 +3518,6 @@ namespace Microsoft.PowerShell.Commands
             Security.NativeMethods.CertEnumSystemStoreCallBackProto callBack =
                 new Security.NativeMethods.CertEnumSystemStoreCallBackProto(CertEnumSystemStoreCallBack);
 
-
             // Return a new list to avoid synchronization issues.
 
             List<string> names = new List<string>();
@@ -3555,7 +3535,6 @@ namespace Microsoft.PowerShell.Commands
 
             return names;
         }
-
 
         /// <summary>
         /// call back function used by CertEnumSystemStore

@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections.Generic;
 using System.Globalization;
@@ -373,9 +372,6 @@ namespace System.Management.Automation.Internal
                                         case CommandTypes.Alias:
                                             current = new AliasInfo(entry.Value.Name, null, context);
                                             break;
-                                        case CommandTypes.Workflow:
-                                            current = new WorkflowInfo(entry.Value.Name, ScriptBlock.EmptyScriptBlock, context);
-                                            break;
                                         case CommandTypes.Function:
                                             current = new FunctionInfo(entry.Value.Name, ScriptBlock.EmptyScriptBlock, context);
                                             break;
@@ -410,7 +406,7 @@ namespace System.Management.Automation.Internal
                     tempModuleInfo = new PSModuleInfo(moduleShortName, modulePath, null, null);
                     if (InitialSessionState.IsEngineModule(moduleShortName))
                     {
-                        tempModuleInfo.SetModuleBase(Utils.GetApplicationBase(Utils.DefaultPowerShellShellID));
+                        tempModuleInfo.SetModuleBase(Utils.DefaultPowerShellAppBase);
                     }
 
                     //moduleVersionRequired is bypassed by FullyQualifiedModule from calling method. This is the only place where guid will be involved.
@@ -481,13 +477,6 @@ namespace System.Management.Automation.Internal
                                 if ((commandTypes & CommandTypes.Configuration) == CommandTypes.Configuration)
                                 {
                                     yield return new ConfigurationInfo(commandName, ScriptBlock.EmptyScriptBlock, context)
-                                    {
-                                        Module = tempModuleInfo
-                                    };
-                                }
-                                if ((commandTypes & CommandTypes.Workflow) == CommandTypes.Workflow)
-                                {
-                                    yield return new WorkflowInfo(commandName, ScriptBlock.EmptyScriptBlock, context)
                                     {
                                         Module = tempModuleInfo
                                     };

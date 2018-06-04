@@ -1,6 +1,5 @@
-﻿/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
@@ -9,7 +8,7 @@ using System.Management.Automation;
 namespace Microsoft.PowerShell.ScheduledJob
 {
     /// <summary>
-    /// This cmdlet gets  scheduled job option object from a provided ScheduledJobDefinition object.
+    /// This cmdlet gets scheduled job option object from a provided ScheduledJobDefinition object.
     /// </summary>
     [Cmdlet(VerbsCommon.Get, "ScheduledJobOption", DefaultParameterSetName = GetScheduledJobOptionCommand.JobDefinitionParameterSet,
         HelpUri = "https://go.microsoft.com/fwlink/?LinkID=223920")]

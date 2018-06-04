@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Generic;
@@ -1010,7 +1009,9 @@ namespace System.Management.Automation.Internal
                     CommandState.Started,
                     commandProcessor.Command.MyInvocation);
 
-                //Microsoft.PowerShell.Telemetry.Internal.TelemetryAPI.TraceExecutedCommand(commandProcessor.Command.CommandInfo, commandProcessor.Command.CommandOrigin);
+#if LEGACYTELEMETRY
+                Microsoft.PowerShell.Telemetry.Internal.TelemetryAPI.TraceExecutedCommand(commandProcessor.Command.CommandInfo, commandProcessor.Command.CommandOrigin);
+#endif
 
                 // Log the execution of a command (not script chunks, as they
                 // are not commands in and of themselves)

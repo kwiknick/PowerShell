@@ -1,4 +1,7 @@
-﻿<#
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+<#
   Windows PowerShell Diagnostics Module
   This module contains a set of wrapper scripts that
   enable a user to use ETW tracing in Windows
@@ -27,9 +30,11 @@ function Start-Trace
     [string]
     $SessionName,
     [Parameter(Position=1)]
+    [ValidateNotNullOrEmpty()]
     [string]
     $OutputFilePath,
     [Parameter(Position=2)]
+    [ValidateNotNullOrEmpty()]
     [string]
     $ProviderFilePath,
     [Parameter()]
@@ -61,17 +66,17 @@ function Start-Trace
             $executestring += " -ets"
         }
 
-        if ($OutputFilePath -ne $null)
+        if ($null -ne $OutputFilePath)
         {
-            $executestring += " -o $OutputFilePath"
+            $executestring += " -o ""$OutputFilePath"""
         }
 
-        if ($ProviderFilePath -ne $null)
+        if ($null -ne $ProviderFilePath)
         {
-            $executestring += " -pf $ProviderFilePath"
+            $executestring += " -pf ""$ProviderFilePath"""
         }
 
-        if ($Format -ne $null)
+        if ($null -ne $Format)
         {
             $executestring += " -f $Format"
         }
@@ -431,7 +436,6 @@ namespace Microsoft.PowerShell.Diagnostics
     }
 }
 "@
-
 
 if ($psedition -eq 'Core')
  {

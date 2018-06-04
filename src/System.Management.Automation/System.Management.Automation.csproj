@@ -1,31 +1,25 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk" ToolsVersion="15.0">
+  <Import Project="..\..\PowerShell.Common.props" />
   <PropertyGroup>
-    <VersionPrefix>6.0.0</VersionPrefix>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <Description>PowerShell Core's System.Management.Automation project</Description>
     <NoWarn>$(NoWarn);CS1570;CS1734</NoWarn>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DelaySign>true</DelaySign>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AssemblyName>System.Management.Automation</AssemblyName>
-    <AssemblyOriginatorKeyFile>../signing/visualstudiopublic.snk</AssemblyOriginatorKeyFile>
-    <SignAssembly>true</SignAssembly>
-    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
-    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
-    <GenerateNeutralResourcesLanguageAttribute>false</GenerateNeutralResourcesLanguageAttribute>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Microsoft.PowerShell.CoreCLR.AssemblyLoadContext\Microsoft.PowerShell.CoreCLR.AssemblyLoadContext.csproj" />
     <ProjectReference Include="..\Microsoft.PowerShell.CoreCLR.Eventing\Microsoft.PowerShell.CoreCLR.Eventing.csproj" />
-    <PackageReference Include="Microsoft.Win32.Registry.AccessControl" Version="4.4.0-preview1-25302-01" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.1" />
-    <PackageReference Include="System.IO.FileSystem.AccessControl" Version="4.4.0-preview1-25302-01" />
-    <PackageReference Include="System.Security.AccessControl" Version="4.4.0-preview1-25302-01" />
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="4.4.0-preview1-25302-01" />
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="4.4.0-preview1-25302-01" />
+    <!-- the following package(s) are from https://github.com/JamesNK/Newtonsoft.Json -->
+    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
+    <!-- the following package(s) are from https://github.com/dotnet/corefx -->
+    <PackageReference Include="Microsoft.Win32.Registry.AccessControl" Version="4.5.0-rc1-26423-06" />
+    <PackageReference Include="System.IO.FileSystem.AccessControl" Version="4.5.0-rc1-26423-06" />
+    <PackageReference Include="System.Security.AccessControl" Version="4.5.0-rc1-26423-06" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="4.5.0-rc1-26423-06" />
+    <PackageReference Include="System.Security.Permissions" Version="4.5.0-rc1-26423-06" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="4.5.0-rc1-26423-06" />
+    <!-- the following package(s) are from the powershell org -->
     <PackageReference Include="Microsoft.Management.Infrastructure" Version="1.0.0-alpha*" />
+    <PackageReference Include="PowerShell.Core.Instrumentation" Version="6.0.0-beta*" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -113,7 +107,6 @@
     <Compile Remove="namespaces\TransactedRegistry.cs" />
     <Compile Remove="namespaces\TransactedRegistryKey.cs" />
     <Compile Remove="namespaces\TransactedRegistrySecurity.cs" />
-    <Compile Remove="security\wldpNativeMethods.cs" />
     <Compile Remove="singleshell\Commands\ConsoleCommands.cs" />
     <Compile Remove="singleshell\Commands\MshSnapinCommands.cs" />
     <Compile Remove="singleshell\config\RegistryStringResourceIndirect.cs" />
@@ -129,21 +122,10 @@
     <Compile Remove="utils\perfCounters\PSPerfCountersMgr.cs" />
     <Compile Remove="gen\CoreMshSnapinResources.cs" />
     <Compile Remove="gen\ErrorPackageRemoting.cs" />
-    
+    <Compile Remove="gen\EventResource.cs" />
+
     <EmbeddedResource Remove="resources\CoreMshSnapinResources.resx" />
     <EmbeddedResource Remove="resources\ErrorPackageRemoting.resx" />
   </ItemGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <DebugType>portable</DebugType>
-  </PropertyGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)' == 'Linux' ">
-    <DefineConstants>$(DefineConstants);UNIX</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)' == 'CodeCoverage' ">
-    <DebugType>full</DebugType>
-  </PropertyGroup>
 
 </Project>

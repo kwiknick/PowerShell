@@ -1,6 +1,5 @@
-﻿/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Runtime.InteropServices;
 using System.Diagnostics.CodeAnalysis;
@@ -275,24 +274,24 @@ namespace System.Management.Automation
         internal static extern bool DosDateTimeToFileTime(
             short wFatDate, // _In_   WORD
             short wFatTime, // _In_   WORD
-            FILETIME lpFileTime); // _Out_  LPFILETIME
+            FILETIME lpFileTime); // _Out_ LPFILETIME
 
         [DllImport(PinvokeDllNames.LocalFileTimeToFileTimeDllName, SetLastError = false, CharSet = CharSet.Unicode)]
         internal static extern bool LocalFileTimeToFileTime(
             FILETIME lpLocalFileTime, // _In_   const FILETIME *
-            FILETIME lpFileTime); // _Out_  LPFILETIME
+            FILETIME lpFileTime); // _Out_ LPFILETIME
 
         [DllImport(PinvokeDllNames.SetFileTimeDllName, SetLastError = false, CharSet = CharSet.Unicode)]
         internal static extern bool SetFileTime(
             IntPtr hFile, // _In_      HANDLE
-            FILETIME lpCreationTime, // _In_opt_  const FILETIME *
-            FILETIME lpLastAccessTime, // _In_opt_  const FILETIME *
-            FILETIME lpLastWriteTime); // _In_opt_  const FILETIME *
+            FILETIME lpCreationTime, // _In_opt_ const FILETIME *
+            FILETIME lpLastAccessTime, // _In_opt_ const FILETIME *
+            FILETIME lpLastWriteTime); // _In_opt_ const FILETIME *
 
         [DllImport(PinvokeDllNames.SetFileAttributesWDllName, SetLastError = false, CharSet = CharSet.Unicode)]
         internal static extern bool SetFileAttributesW(
-            [MarshalAs(UnmanagedType.LPWStr)] string lpFileName, // _In_  LPCTSTR
-            FileAttributes dwFileAttributes); // _In_  DWORD
+            [MarshalAs(UnmanagedType.LPWStr)] string lpFileName, // _In_ LPCTSTR
+            FileAttributes dwFileAttributes); // _In_ DWORD
 
         /// <summary>
         /// Enable the privilege specified by the privilegeName. If the specified privilege is already enabled, return true
@@ -337,7 +336,7 @@ namespace System.Management.Automation
                             // The specified privilege is not enabled yet. Enable it.
                             newPrivilegeState.PrivilegeCount = 1;
                             newPrivilegeState.Privilege.Attributes = SE_PRIVILEGE_ENABLED;
-                            int bufferSize = ClrFacade.SizeOf<TOKEN_PRIVILEGE>();
+                            int bufferSize = Marshal.SizeOf<TOKEN_PRIVILEGE>();
                             int returnSize = 0;
 
                             // enable the specified privilege
@@ -406,7 +405,7 @@ namespace System.Management.Automation
                     IntPtr tokenHandler = IntPtr.Zero;
                     if (OpenProcessToken(processHandler, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out tokenHandler))
                     {
-                        int bufferSize = ClrFacade.SizeOf<TOKEN_PRIVILEGE>();
+                        int bufferSize = Marshal.SizeOf<TOKEN_PRIVILEGE>();
                         int returnSize = 0;
 
                         // restore the privilege state back to the previous privilege state
@@ -701,6 +700,7 @@ namespace System.Management.Automation
 
         [DllImport(PinvokeDllNames.ResumeThreadDllName, CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern uint ResumeThread(IntPtr threadHandle);
+        internal static uint RESUME_THREAD_FAILED = System.UInt32.MaxValue; // (DWORD)-1
 
         [DllImport(PinvokeDllNames.CreateFileDllName, CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern System.IntPtr CreateFileW(

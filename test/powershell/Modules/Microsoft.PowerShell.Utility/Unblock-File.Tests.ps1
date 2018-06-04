@@ -1,14 +1,8 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
 function Test-UnblockFile {
-    try {
-        Get-Content -Path $testfilepath -Stream Zone.Identifier -ErrorAction Stop | Out-Null
-    }
-    catch {
-        if ($_.FullyQualifiedErrorId -eq "GetContentReaderFileNotFoundError,Microsoft.PowerShell.Commands.GetContentCommand") {
-            return $true
-        }
-    }
-    
-    return $false
+    { Get-Content -Path $testfilepath -Stream Zone.Identifier -ErrorAction Stop | Out-Null } |
+        Should -Throw -ErrorId "GetContentReaderFileNotFoundError,Microsoft.PowerShell.Commands.GetContentCommand"
 }
 
 Describe "Unblock-File" -Tags "CI" {
@@ -37,32 +31,39 @@ Describe "Unblock-File" -Tags "CI" {
     }
 
     It "With '-Path': no file exist" {
-        try {
-            Unblock-File -Path nofileexist.ttt -ErrorAction Stop
-            throw "No Exception!"
-        } 
-        catch {
-            $_.FullyQualifiedErrorId | Should Be "FileNotFound,Microsoft.PowerShell.Commands.UnblockFileCommand"
-        }
+        { Unblock-File -Path nofileexist.ttt -ErrorAction Stop } | Should -Throw -ErrorId "FileNotFound,Microsoft.PowerShell.Commands.UnblockFileCommand"
     }
 
     It "With '-LiteralPath': no file exist" {
-        try {
-            Unblock-File -LiteralPath nofileexist.ttt -ErrorAction Stop
-            throw "No Exception!"
-        } 
-        catch {
-            $_.FullyQualifiedErrorId | Should Be "FileNotFound,Microsoft.PowerShell.Commands.UnblockFileCommand"
-        }
+        { Unblock-File -LiteralPath nofileexist.ttt -ErrorAction Stop } | Should -Throw -ErrorId "FileNotFound,Microsoft.PowerShell.Commands.UnblockFileCommand"
     }
 
     It "With '-Path': file exist" {
         Unblock-File -Path $testfilepath
-        Test-UnblockFile | Should Be $true
+        Test-UnblockFile
+
+        # If a file is not blocked we silently return without an error.
+        { Unblock-File -Path $testfilepath -ErrorAction Stop } | Should -Not -Throw
     }
 
     It "With '-LiteralPath': file exist" {
         Unblock-File -LiteralPath $testfilepath
-        Test-UnblockFile | Should Be $true
+        Test-UnblockFile
+    }
+
+    It "Write an error if a file is read only" {
+        $TestFile = Join-Path $TestDrive "testfileunlock.ps1"
+        Set-Content -Path $TestFile -value 'test'
+        $ZoneIdentifier = {
+            [ZoneTransfer]
+            ZoneId=3
+        }
+        Set-Content -Path $TestFile -Value $ZoneIdentifier -Stream 'Zone.Identifier'
+        Set-ItemProperty -Path $TestFile -Name IsReadOnly -Value $True
+
+        $TestFileCreated = Get-ChildItem $TestFile
+        $TestFileCreated.IsReadOnly | Should -BeTrue
+
+        { Unblock-File -LiteralPath $TestFile -ErrorAction Stop } | Should -Throw -ErrorId "RemoveItemUnauthorizedAccessError,Microsoft.PowerShell.Commands.UnblockFileCommand"
     }
 }

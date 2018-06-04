@@ -1,6 +1,6 @@
-/********************************************************************++
- * Copyright (c) Microsoft Corporation.  All rights reserved.
- * --********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 /*
  * Common file that contains interface definitions for generic server and client
  * transport managers.
@@ -1210,7 +1210,6 @@ namespace System.Management.Automation.Remoting.Client
     }
 }
 
-
 namespace System.Management.Automation.Remoting.Server
 {
     /// <summary>
@@ -1276,9 +1275,9 @@ namespace System.Management.Automation.Remoting.Server
                 //  icm . {
                 //        $a = new-object psobject
                 //        $a.pstypenames.Insert(0, "Microsoft.PowerShell.Test.Bug491001")
-                //        Update-TypeData -TypeName Microsoft.PowerShell.Test.Bug491001 -MemberType ScriptProperty -MemberName name -Value {( 1..50kb | % { get-random -min 97 -max 122 | %  { [char]$psitem } }) -join ""}
+                //        Update-TypeData -TypeName Microsoft.PowerShell.Test.Bug491001 -MemberType ScriptProperty -MemberName name -Value {( 1..50kb | % { get-random -min 97 -max 122 | % { [char]$psitem } }) -join ""}
                 //        Update-TypeData -TypeName Microsoft.PowerShell.Test.Bug491001 -MemberType ScriptProperty -MemberName Verbose -Value {write-progress "blah" -Completed; "Some verbose data"}
-                //        Update-TypeData -TypeName Microsoft.PowerShell.Test.Bug491001 -MemberType ScriptProperty -MemberName zname -Value {( 1..10kb | % { get-random -min 97 -max 122 | %  { [char]$psitem } }) -join ""}
+                //        Update-TypeData -TypeName Microsoft.PowerShell.Test.Bug491001 -MemberType ScriptProperty -MemberName zname -Value {( 1..10kb | % { get-random -min 97 -max 122 | % { [char]$psitem } }) -join ""}
                 //        $a
                 //   }
                 // 1. The value of "name" property is huge 50kb and cannot fit in one fragment (with fragment size 32kb)

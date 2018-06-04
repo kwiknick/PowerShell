@@ -1,6 +1,5 @@
-/********************************************************************++
- * Copyright (c) Microsoft Corporation.  All rights reserved.
- * --********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Threading;
 using System.Management.Automation.Runspaces;
@@ -743,9 +742,7 @@ namespace System.Management.Automation.Remoting
             // This is used by the initial session state configuration providers like Exchange.
             if (Context != null)
             {
-#if !CORECLR // TimeZone Not In CoreCLR
                 _senderInfo.ClientTimeZone = Context.ClientCapability.TimeZone;
-#endif
             }
 
             _senderInfo.ApplicationArguments = RemotingDecoder.GetApplicationArguments(rcvdData.Data);

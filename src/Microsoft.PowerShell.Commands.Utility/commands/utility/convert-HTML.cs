@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections;
@@ -228,6 +227,68 @@ namespace Microsoft.PowerShell.Commands
         private string[] _preContent;
 
         /// <summary>
+        /// Sets and Gets the meta property of the HTML head
+        /// </summary>
+        /// <returns></returns>
+        [Parameter(ParameterSetName = "Page")]
+        [ValidateNotNullOrEmpty]
+        public Hashtable Meta
+        {
+            get
+            {
+                return _meta;
+            }
+            set
+            {
+                _meta = value;
+                _metaSpecified = true;
+            }
+        }
+        private Hashtable _meta;
+        private bool _metaSpecified = false;
+
+        /// <summary>
+        /// Specifies the charset encoding for the HTML document
+        /// </summary>
+        [Parameter(ParameterSetName = "Page")]
+        [ValidateNotNullOrEmpty]
+        [ValidatePattern("^[A-Za-z0-9]\\w+\\S+[A-Za-z0-9]$")]
+        public string Charset
+        {
+            get
+            {
+                return _charset;
+            }
+            set
+            {
+                _charset = value;
+                _charsetSpecified = true;
+            }
+        }
+        private string _charset;
+        private bool _charsetSpecified = false;
+
+        /// <summary>
+        /// When this switch statement is specified,
+        /// it will change the DOCTYPE to XHTML Transitional DTD
+        /// </summary>
+        /// <returns></returns>
+        [Parameter(ParameterSetName = "Page")]
+        [ValidateNotNullOrEmpty]
+        public SwitchParameter Transitional
+        {
+            get
+            {
+                return _transitional;
+            }
+            set
+            {
+                _transitional = true;
+            }
+        }
+        private bool _transitional = false;
+
+        /// <summary>
         /// definitions for hash table keys
         /// </summary>
         internal static class ConvertHTMLParameterDefinitionKeys
@@ -283,23 +344,11 @@ namespace Microsoft.PowerShell.Commands
                 string width = p.GetEntry(ConvertHTMLParameterDefinitionKeys.WidthEntryKey) as string;
                 MshExpression ex = p.GetEntry(FormatParameterDefinitionKeys.ExpressionEntryKey) as MshExpression;
                 List<MshExpression> resolvedNames = ex.ResolveNames(_inputObject);
-                if (resolvedNames.Count == 1)
+                foreach (MshExpression resolvedName in resolvedNames)
                 {
                     Hashtable ht = CreateAuxPropertyHT(label, alignment, width);
-                    if (ex.Script != null)
-                        ht.Add(FormatParameterDefinitionKeys.ExpressionEntryKey, ex.Script);
-                    else
-                        ht.Add(FormatParameterDefinitionKeys.ExpressionEntryKey, ex.ToString());
+                    ht.Add(FormatParameterDefinitionKeys.ExpressionEntryKey, resolvedName.ToString());
                     resolvedNameProperty.Add(ht);
-                }
-                else
-                {
-                    foreach (MshExpression resolvedName in resolvedNames)
-                    {
-                        Hashtable ht = CreateAuxPropertyHT(label, alignment, width);
-                        ht.Add(FormatParameterDefinitionKeys.ExpressionEntryKey, resolvedName.ToString());
-                        resolvedNameProperty.Add(ht);
-                    }
                 }
             }
             _resolvedNameMshParameters = ProcessParameter(resolvedNameProperty.ToArray());
@@ -348,7 +397,6 @@ namespace Microsoft.PowerShell.Commands
             return "";
         }
 
-
         /// <summary>
         ///
         /// </summary>
@@ -369,16 +417,64 @@ namespace Microsoft.PowerShell.Commands
                 WebUtility.HtmlEncode(_title);
             }
 
-
             // This first line ensures w3c validation will succeed. However we are not specifying
             // an encoding in the HTML because we don't know where the text will be written and
             // if a particular encoding will be used.
 
             if (!_fragment)
             {
-                WriteObject("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"  \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">");
+                if(!_transitional)
+                {
+                    WriteObject("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"  \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">");
+                }
+                else
+                {
+                    WriteObject("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"  \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">");
+                }
                 WriteObject("<html xmlns=\"http://www.w3.org/1999/xhtml\">");
                 WriteObject("<head>");
+                if(_charsetSpecified)
+                {
+                    WriteObject("<meta charset=\"" + _charset + "\">");
+                }
+                if(_metaSpecified)
+                {
+                    List<string> useditems = new List<string>();
+                    foreach(string s in _meta.Keys)
+                    {
+                        if(!useditems.Contains(s)){
+                            switch(s.ToLower()){
+                                case "content-type":
+                                case "default-style":
+                                case "x-ua-compatible":
+                                    WriteObject("<meta http-equiv=\"" + s + "\" content=\"" + _meta[s] + "\">");
+                                    break;
+                                case "application-name":
+                                case "author":
+                                case "description":
+                                case "generator":
+                                case "keywords":
+                                case "viewport":
+                                    WriteObject("<meta name=\"" + s + "\" content=\"" + _meta[s] + "\">");
+                                    break;
+                                default:
+                                    MshCommandRuntime mshCommandRuntime = this.CommandRuntime as MshCommandRuntime;
+                                    string Message = StringUtil.Format(ConvertHTMLStrings.MetaPropertyNotFound, s, _meta[s]);
+                                    WarningRecord record = new WarningRecord(Message);
+                                    InvocationInfo invocationInfo = GetVariableValue(SpecialVariables.MyInvocation) as InvocationInfo;
+
+                                    if (invocationInfo != null)
+                                    {
+                                        record.SetInvocationInfo(invocationInfo);
+                                    }
+                                    mshCommandRuntime.WriteWarning(record);
+                                    WriteObject("<meta name=\"" + s + "\" content=\"" + _meta[s] + "\">");
+                                    break;
+                            }
+                            useditems.Add(s);
+                        }
+                    }
+                }
                 WriteObject(_head ?? new string[] { "<title>" + _title + "</title>" }, true);
                 if (_cssuriSpecified)
                 {

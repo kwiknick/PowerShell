@@ -1,13 +1,10 @@
-//
-//    Copyright (C) Microsoft.  All rights reserved.
-//
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Runtime.InteropServices;
 
-#if !CORECLR
 using System.Runtime.ConstrainedExecution;
-#endif
 
 namespace Microsoft.Powershell.Commands.GetCounter.PdhNative
 {
@@ -23,18 +20,12 @@ namespace Microsoft.Powershell.Commands.GetCounter.PdhNative
             }
         }
 
-
-#if !CORECLR // ReliabilityContract not supported on CoreCLR
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
-#endif
         protected override bool ReleaseHandle()
         {
             return (PdhHelper.PdhCloseLog(handle, 0) == 0);
         }
     }
-
-
-
 
     internal sealed class PdhSafeQueryHandle : SafeHandle
     {
@@ -48,10 +39,7 @@ namespace Microsoft.Powershell.Commands.GetCounter.PdhNative
             }
         }
 
-
-#if !CORECLR // ReliabilityContract not supported on CoreCLR
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
-#endif
         protected override bool ReleaseHandle()
         {
             return (PdhHelper.PdhCloseQuery(handle) == 0);
@@ -70,15 +58,10 @@ namespace Microsoft.Powershell.Commands.GetCounter.PdhNative
             }
         }
 
-
-#if !CORECLR // ReliabilityContract not supported on CoreCLR
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
-#endif
         protected override bool ReleaseHandle()
         {
             return (PdhHelper.PdhCloseLog(handle, 0) == 0);
         }
     }
 }
-
-

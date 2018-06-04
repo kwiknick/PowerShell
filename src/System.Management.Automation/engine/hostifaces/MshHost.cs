@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Management.Automation.Runspaces;
 using System.Diagnostics.CodeAnalysis;
@@ -43,7 +42,7 @@ namespace System.Management.Automation.Host
     public abstract class PSHost
     {
         /// <summary>
-        /// The powershell.exe spec states that 128 is the maximum nesting depth.
+        /// The powershell spec states that 128 is the maximum nesting depth.
         /// </summary>
         internal const int MaximumNestedPromptLevel = 128;
         internal static bool IsStdOutputRedirected;
@@ -86,8 +85,6 @@ namespace System.Management.Automation.Host
             get;
         }
 
-
-
         /// <summary>
         ///
         /// Gets the version of the hosting application.  This value should remain invariant for a particular build of the
@@ -109,8 +106,6 @@ namespace System.Management.Automation.Host
             get;
         }
 
-
-
         /// <summary>
         ///
         /// Gets a GUID that uniquely identifies this instance of the host.  The value should remain invariant for the lifetime of
@@ -122,8 +117,6 @@ namespace System.Management.Automation.Host
         {
             get;
         }
-
-
 
         /// <summary>
         ///
@@ -150,8 +143,6 @@ namespace System.Management.Automation.Host
             get;
         }
 
-
-
         /// <summary>
         ///
         /// Gets the host's culture: the culture that the runspace should use to set the CurrentCulture on new threads
@@ -174,8 +165,6 @@ namespace System.Management.Automation.Host
             get;
         }
 
-
-
         /// <summary>
         ///
         /// Gets the host's UI culture: the culture that the runspace and cmdlets should use to do resource loading.
@@ -193,8 +182,6 @@ namespace System.Management.Automation.Host
         {
             get;
         }
-
-
 
         /// <summary>
         ///
@@ -217,8 +204,6 @@ namespace System.Management.Automation.Host
         /// </param>
 
         public abstract void SetShouldExit(int exitCode);
-
-
 
         /// <summary>
         ///
@@ -247,8 +232,6 @@ namespace System.Management.Automation.Host
 
         public abstract void EnterNestedPrompt();
 
-
-
         /// <summary>
         ///
         /// Causes the host to end the currently running input loop.  If the input loop was created by a prior call to
@@ -269,8 +252,6 @@ namespace System.Management.Automation.Host
 
         public abstract void ExitNestedPrompt();
 
-
-
         /// <summary>
         ///
         /// Used to allow the host to pass private data through a Runspace to cmdlets running inside that Runspace's
@@ -289,7 +270,7 @@ namespace System.Management.Automation.Host
         /// that process boundary in the same fashion as any object in a pipeline is serialized when crossing process boundaries.
         /// In this case, the BaseObject property of the value will be null.
         ///
-        /// If the host is using an in-process Runspace, then the BaseObject property can be a non-null value  a live object.
+        /// If the host is using an in-process Runspace, then the BaseObject property can be a non-null value a live object.
         /// No guarantees are made as to the app domain or thread that the BaseObject is accessed if it is accessed in the
         /// runspace. No guarantees of threadsafety or reentrancy are made.  The object set in the BaseObject property of
         /// the value returned by this method is responsible for ensuring its own threadsafety and re-entrance safety.
@@ -309,8 +290,6 @@ namespace System.Management.Automation.Host
                 return null;
             }
         }
-
-
 
         /// <summary>
         ///
@@ -349,8 +328,6 @@ namespace System.Management.Automation.Host
         /// <seealso cref="System.Management.Automation.Host.PSHost.NotifyEndApplication"/>
 
         public abstract void NotifyBeginApplication();
-
-
 
         /// <summary>
         ///

@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.IO;
@@ -199,11 +198,10 @@ namespace Microsoft.PowerShell.Commands
         }
     }
 
-
     /// <summary>
     /// Defines the implementation of the 'ConvertTo-SecureString' cmdlet.
     /// This cmdlet imports a new SecureString from encrypted data --
-    /// one that represents  text that should be kept confidential.
+    /// one that represents text that should be kept confidential.
     /// The text is encrypted for privacy when being used, and deleted
     /// from computer memory when no longer needed.  When no key is
     /// specified, the command uses the DPAPI to decrypt the data.
@@ -277,7 +275,6 @@ namespace Microsoft.PowerShell.Commands
             }
         }
         private bool _force;
-
 
         /// <summary>
         /// Processes records from the input pipeline.

@@ -1,7 +1,5 @@
-//-----------------------------------------------------------------------
-//     Copyright (C) 2013 Microsoft Corporation
-// </copyright>
-//-----------------------------------------------------------------------
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -122,7 +120,6 @@ namespace System.Management.Automation
 
 // HelpFile
     }
-
 
     /// <summary>
     /// Contains a DSC resource property information

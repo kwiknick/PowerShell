@@ -1,7 +1,14 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
 <############################################################################################
  # File: Export-Counter.Tests.ps1
  # Provides Pester tests for the Export-Counter cmdlet.
  ############################################################################################>
+ 
+ # Counter CmdLets are removed see issue #4272
+ # Tests are disabled
+ return
+ 
 $cmdletName = "Export-Counter"
 
 . "$PSScriptRoot/CounterTestHelperFunctions.ps1"
@@ -22,7 +29,7 @@ $counterValues = $null
 # counters and comparing the two sets
 function CheckExportResults
 {
-    Test-Path $filePath | Should Be $true
+    Test-Path $filePath | Should -BeTrue
     $importedCounterValues = Import-Counter $filePath
 
     CompareCounterSets $counterValues $importedCounterValues
@@ -91,16 +98,8 @@ function RunTest($testCase)
             else
             {
                 # Here we expect and want the command to fail
-                try
-                {
-                    $sb = [ScriptBlock]::Create($cmd)
-                    &$sb
-                    throw "Did not throw expected exception"
-                }
-                catch
-                {
-                    $_.FullyQualifiedErrorId | Should Be $testCase.ExpectedErrorId
-                }
+                $sb = [ScriptBlock]::Create($cmd)
+                { &$sb } | Should -Throw -ErrorId $testCase.ExpectedErrorId
             }
         }
         finally
@@ -177,11 +176,6 @@ Describe "Feature tests for Export-Counter cmdlet" -Tags "Feature" {
                 Parameters = "-MaxSize -2"
                 ExpectedErrorId = "CannotConvertArgumentNoMessage,Microsoft.PowerShell.Commands.ExportCounterCommand"
             }
-            @{
-                Name = "Fails when given invalid file format"
-                FileFormat = "dat"
-                ExpectedErrorId = "CounterInvalidFormat,Microsoft.PowerShell.Commands.ExportCounterCommand"
-            }
         )
 
         foreach ($testCase in $testCases)
@@ -200,7 +194,7 @@ Describe "Feature tests for Export-Counter cmdlet" -Tags "Feature" {
             @{
                 Name = "Can force overwriting existing file"
                 Parameters = "-Force"
-                Script = { Test-Path $filePath | Should Be $true }
+                Script = { Test-Path $filePath | Should -BeTrue }
             }
             @{
                 Name = "Can export BLG format"

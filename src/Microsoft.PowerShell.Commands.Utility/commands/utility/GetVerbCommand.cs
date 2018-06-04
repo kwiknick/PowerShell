@@ -1,4 +1,7 @@
-﻿using System;
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+using System;
 using System.Management.Automation;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -71,7 +74,9 @@ namespace Microsoft.PowerShell.Commands
 
                         VerbInfo verb = new VerbInfo();
                         verb.Verb = field.Name;
+                        verb.AliasPrefix = VerbAliasPrefixes.GetVerbAliasPrefix(field.Name);
                         verb.Group = groupName;
+                        verb.Description = VerbDescriptions.GetVerbDescription(field.Name);
                         WriteObject(verb);
                     }
                 }

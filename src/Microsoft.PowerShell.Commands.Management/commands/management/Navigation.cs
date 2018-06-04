@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
@@ -206,7 +205,6 @@ namespace Microsoft.PowerShell.Commands
         ///
         public virtual string Filter { get; set; }
 
-
         /// <summary>
         /// Gets or sets the include property
         /// </summary>
@@ -225,7 +223,6 @@ namespace Microsoft.PowerShell.Commands
 
 // Include
 
-
         /// <summary>
         /// Gets or sets the exclude property
         /// </summary>
@@ -243,7 +240,6 @@ namespace Microsoft.PowerShell.Commands
         } = new string[0];
 
 // Exclude
-
 
         /// <summary>
         /// Gets or sets the force property
@@ -275,7 +271,6 @@ namespace Microsoft.PowerShell.Commands
             }
         } // Force
         private bool _force;
-
 
         /// <summary>
         /// Retrieves the dynamic parameters for the command from
@@ -419,7 +414,6 @@ namespace Microsoft.PowerShell.Commands
 
         #region Location parameter set parameters
 
-
         /// <summary>
         /// Gets or sets the provider from which to get the current location.
         /// </summary>
@@ -486,7 +480,6 @@ namespace Microsoft.PowerShell.Commands
 
         #region command data
 
-
         #region Location parameter set data
 
         /// <summary>
@@ -505,9 +498,7 @@ namespace Microsoft.PowerShell.Commands
 
         #endregion Stack parameter set data
 
-
         #endregion command data
-
 
         #region command code
 
@@ -717,7 +708,6 @@ namespace Microsoft.PowerShell.Commands
     } // class GetLocationCommand
     #endregion GetLocationCommand
 
-
     #region SetLocationCommand
 
     /// <summary>
@@ -745,22 +735,9 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         private const string stackSet = "Stack";
 
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-
-        /// <summary>
-        /// The string declaration for the Relationship parameter set in this command.
-        /// </summary>
-        private const string relationshipSet = "Relationship";
-#endif
         /// <summary>
         /// Gets or sets the path property
         /// </summary>
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-
-        [Parameter(Position = 0, ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-#endif
         [Parameter(Position = 0, ParameterSetName = pathSet,
                    ValueFromPipeline = true, ValueFromPipelineByPropertyName = true)]
         public string Path
@@ -780,7 +757,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = literalPathSet,
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string LiteralPath
         {
             get
@@ -813,68 +790,6 @@ namespace Microsoft.PowerShell.Commands
         [Parameter(ParameterSetName = stackSet, ValueFromPipelineByPropertyName = true)]
         public string StackName { get; set; }
 
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-
-        /// <summary>
-        /// Gets or sets the relationship Parameter which determines which relationship
-        /// to resolve to a path to set-location to.
-        /// </summary>
-        ///
-        [Parameter(Mandatory = true, ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-        public string Relationship
-        {
-            get
-            {
-                return relationship;
-            }
-
-            set
-            {
-                relationship = value;
-            }
-        }
-        private string relationship = String.Empty;
-
-
-        /// <summary>
-        /// Gets or sets the Property parameter value
-        /// </summary>
-        ///
-        [Parameter(ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-        public string Property
-        {
-            get
-            {
-                return property;
-            }
-
-            set
-            {
-                property = value;
-            }
-        }
-        private string property = String.Empty;
-
-        /// <summary>
-        /// Gets or sets the Target parameter value
-        /// </summary>
-        ///
-        [Parameter (ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-        public string Target
-        {
-            get
-            {
-                return target;
-            }
-
-            set
-            {
-                target = value;
-            }
-        }
-        private string target = String.Empty;
-#endif
         #endregion Command parameters
 
         #region Command data
@@ -971,76 +886,6 @@ namespace Microsoft.PowerShell.Commands
 
                     break;
 
-#if RELATIONSHIP_SUPPORTED
-    // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-
-                case relationshipSet:
-                    string relationshipPath = null;
-                    try
-                    {
-                        relationshipPath =
-                            InvokeProvider.Relationship.Resolve(
-                                Relationship,
-                                Path,
-                                Property,
-                                Target);
-                    }
-                    catch (PSArgumentException argException)
-                    {
-                        WriteError(
-                            new ErrorRecord(
-                                argException.ErrorRecord,
-                                argException));
-                        return;
-                    }
-
-                    try
-                    {
-                        result = SessionState.Path.SetLocation (relationshipPath, CmdletProviderContext);
-                    }
-                    catch (PSNotSupportedException notSupported)
-                    {
-                        WriteError(
-                            new ErrorRecord(
-                                notSupported.ErrorRecord,
-                                notSupported));
-                        return;
-                    }
-                    catch (DriveNotFoundException driveNotFound)
-                    {
-                        WriteError(
-                            new ErrorRecord(
-                                driveNotFound.ErrorRecord,
-                                driveNotFound));
-                        return;
-                    }
-                    catch (ProviderNotFoundException providerNotFound)
-                    {
-                        WriteError(
-                            new ErrorRecord(
-                                providerNotFound.ErrorRecord,
-                                providerNotFound));
-                        return;
-                    }
-                    catch (PSArgumentException argException)
-                    {
-                        WriteError(
-                            new ErrorRecord(
-                                argException.ErrorRecord,
-                                argException));
-                        return;
-                    }
-                    catch (ItemNotFoundException pathNotFound)
-                    {
-                        WriteError(
-                            new ErrorRecord(
-                                pathNotFound.ErrorRecord,
-                                pathNotFound));
-                        return;
-                    }
-
-                    break;
-#endif
                 default:
                     Dbg.Diagnostics.Assert(
                         false,
@@ -1070,18 +915,9 @@ namespace Microsoft.PowerShell.Commands
     {
         #region Command parameters
 
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-        private const string relationshipSet = "Relationship";
-#endif
-
         /// <summary>
         /// Gets or sets the path property
         /// </summary>
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-        [Parameter (Position = 0, ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-#endif
         [Parameter(Position = 0, ParameterSetName = "Path",
                    ValueFromPipeline = true, ValueFromPipelineByPropertyName = true)]
         public string Path
@@ -1101,7 +937,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string LiteralPath
         {
             get
@@ -1115,7 +951,6 @@ namespace Microsoft.PowerShell.Commands
                 _path = value;
             } // set
         } // LiteralPath
-
 
         /// <summary>
         /// Gets or sets the parameter -passThru which states output from
@@ -1139,10 +974,6 @@ namespace Microsoft.PowerShell.Commands
         /// to use for the push. If the parameter is missing or empty the default
         /// location stack is used.
         /// </summary>
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-        [Parameter (ParameterSetName = relationshipSet)]
-#endif
         [Parameter(ValueFromPipelineByPropertyName = true)]
         public string StackName
         {
@@ -1156,67 +987,6 @@ namespace Microsoft.PowerShell.Commands
             } //set
         } // StackName
 
-#if RELATIONSHIP_SUPPORTED
-        // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-
-        /// <summary>
-        /// Gets or sets the relationship Parameter which determines which relationship
-        /// to resolve to a path to set-location to.
-        /// </summary>
-        ///
-        [Parameter (Mandatory = true, ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-        public string Relationship
-        {
-            get
-            {
-                return relationship;
-            }
-
-            set
-            {
-                relationship = value;
-            }
-        }
-        private string relationship = String.Empty;
-
-        /// <summary>
-        /// Gets or sets the Property parameter value
-        /// </summary>
-        ///
-        [Parameter (ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-        public string Property
-        {
-            get
-            {
-                return property;
-            }
-
-            set
-            {
-                property = value;
-            }
-        }
-        private string property = String.Empty;
-
-        /// <summary>
-        /// Gets or sets the Target parameter value
-        /// </summary>
-        ///
-        [Parameter (ParameterSetName = relationshipSet, ValueFromPipelineByPropertyName = true)]
-        public string Target
-        {
-            get
-            {
-                return target;
-            }
-
-            set
-            {
-                target = value;
-            }
-        }
-        private string target = String.Empty;
-#endif
         #endregion Command parameters
 
         #region Command data
@@ -1251,42 +1021,6 @@ namespace Microsoft.PowerShell.Commands
             // working directory stack
             SessionState.Path.PushCurrentLocation(_stackName);
 
-#if RELATIONSHIP_SUPPORTED
-    // 2004/11/24-JeffJon - Relationships have been removed from the Exchange release
-
-            if (String.Equals(
-                    relationshipSet,
-                    ParameterSetName,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    Path =
-                        InvokeProvider.Relationship.Resolve(
-                            Relationship,
-                            Path,
-                            Property,
-                            Target);
-                }
-                catch (ProviderNotFoundException providerNotFound)
-                {
-                    WriteError(
-                        new ErrorRecord(
-                            providerNotFound.ErrorRecord,
-                            providerNotFound));
-
-                    return;
-                }
-                catch (PSArgumentException argException)
-                {
-                    WriteError(
-                        new ErrorRecord(
-                            argException.ErrorRecord,
-                            argException));
-                    return;
-                }
-            }
-#endif
             if (Path != null)
             {
                 try
@@ -1411,9 +1145,7 @@ namespace Microsoft.PowerShell.Commands
 
         #endregion Command data
 
-
         #region Command code
-
 
         /// <summary>
         /// Gets the top container from the location stack and sets the
@@ -1841,7 +1573,6 @@ namespace Microsoft.PowerShell.Commands
                     }
                 }
 
-
                 WildcardPattern providerMatcher = null;
                 PSSnapinQualifiedName pssnapinQualifiedProviderName = null;
 
@@ -1860,7 +1591,6 @@ namespace Microsoft.PowerShell.Commands
                             pssnapinQualifiedProviderName.ShortName,
                             WildcardOptions.IgnoreCase);
                 }
-
 
                 WildcardPattern nameMatcher = null;
 
@@ -2329,7 +2059,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get
@@ -2617,8 +2347,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         protected override void ProcessRecord()
         {
-            if (Path == null ||
-                (Path != null && Path.Length == 0))
+            if (Path == null || Path.Length == 0)
             {
                 Path = new string[] { String.Empty };
             }
@@ -2697,7 +2426,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get { return _paths; }
@@ -2914,7 +2643,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get
@@ -3107,6 +2836,18 @@ namespace Microsoft.PowerShell.Commands
                     try
                     {
                         resolvedPSPaths = SessionState.Path.GetResolvedPSPathFromPSPath(path, currentContext);
+                        if (true == SuppressWildcardExpansion && 0 == resolvedPSPaths.Count)
+                        {
+                            ItemNotFoundException pathNotFound =
+                                new ItemNotFoundException(
+                                    path,
+                                    "PathNotFound",
+                                    SessionStateStrings.PathNotFound);
+                            WriteError(new ErrorRecord(
+                                pathNotFound.ErrorRecord,
+                                pathNotFound));
+                            continue;
+                        }
                     }
                     finally
                     {
@@ -3253,18 +2994,23 @@ namespace Microsoft.PowerShell.Commands
 
                     bool shouldRecurse = Recurse;
                     bool treatAsFile = false;
-                    try
+
+                    // only check if path is a directory using DirectoryInfo if using FileSystemProvider
+                    if (resolvedPath.Provider.Name.Equals(FileSystemProvider.ProviderName, StringComparison.OrdinalIgnoreCase))
                     {
-                        System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(providerPath);
-                        if (di != null && (di.Attributes & System.IO.FileAttributes.ReparsePoint) != 0)
+                        try
                         {
-                            shouldRecurse = false;
-                            treatAsFile = true;
+                            System.IO.DirectoryInfo di = new System.IO.DirectoryInfo(providerPath);
+                            if (di != null && (di.Attributes & System.IO.FileAttributes.ReparsePoint) != 0)
+                            {
+                                shouldRecurse = false;
+                                treatAsFile = true;
+                            }
                         }
-                    }
-                    catch (System.IO.FileNotFoundException)
-                    {
-                        // not a directory
+                        catch (System.IO.FileNotFoundException)
+                        {
+                            // not a directory
+                        }
                     }
 
                     if (!treatAsFile && !Recurse && hasChildren)
@@ -3371,7 +3117,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get { return _paths; }
@@ -3510,7 +3256,7 @@ namespace Microsoft.PowerShell.Commands
             Collection<PathInfo> results = new Collection<PathInfo>();
             try
             {
-                results = SessionState.Path.GetResolvedPSPathFromPSPath(path);
+                results = SessionState.Path.GetResolvedPSPathFromPSPath(path, CmdletProviderContext);
             }
             catch (PSNotSupportedException notSupported)
             {
@@ -3625,7 +3371,6 @@ namespace Microsoft.PowerShell.Commands
                             pathNotFound));
                     continue;
                 }
-
 
                 // See if the item to be moved is in use.
                 bool isCurrentLocationOrAncestor = false;
@@ -3762,7 +3507,7 @@ namespace Microsoft.PowerShell.Commands
         /// Gets or sets the literal path property
         /// </summary>
         [Parameter(Mandatory = true, ValueFromPipelineByPropertyName = true, ParameterSetName = "ByLiteralPath")]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string LiteralPath
         {
             get { return _path; }
@@ -3799,7 +3544,6 @@ namespace Microsoft.PowerShell.Commands
             get { return base.Force; }
             set { base.Force = value; }
         }
-
 
         /// <summary>
         /// Gets or sets the pass through property which determines
@@ -4057,7 +3801,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get { return _paths; }
@@ -4330,7 +4074,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get
@@ -4561,7 +4305,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter(ParameterSetName = "LiteralPath",
                    Mandatory = true, ValueFromPipeline = false, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string[] LiteralPath
         {
             get
@@ -4771,9 +4515,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         protected override void ProcessRecord()
         {
-            if (PSProvider == null ||
-                (PSProvider != null &&
-                 PSProvider.Length == 0))
+            if (PSProvider == null || PSProvider.Length == 0)
             {
                 // Get all the providers
 

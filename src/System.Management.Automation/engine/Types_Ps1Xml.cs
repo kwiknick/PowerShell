@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using System.Collections.Generic;
 using System.Management.Automation;
 using System.Reflection;
@@ -151,7 +154,7 @@ namespace System.Management.Automation.Runspaces
             td17.Members.Add("DisplayName",
                 new ScriptPropertyData(@"DisplayName", GetScriptBlock(@"if ($this.Name.IndexOf('-') -lt 0)
           {
-          if ($this.ResolvedCommand -ne $null)
+          if ($null -ne $this.ResolvedCommand)
           {
           $this.Name + "" -> "" + $this.ResolvedCommand.Name
           }
@@ -232,10 +235,10 @@ namespace System.Management.Automation.Runspaces
             var td24 = new TypeData(@"System.Management.ManagementObject#root\cimv2\Win32_PingStatus", true);
             td24.Members.Add("IPV4Address",
                 new ScriptPropertyData(@"IPV4Address", GetScriptBlock(@"$iphost = [System.Net.Dns]::GetHostEntry($this.address)
-          $iphost.AddressList | ?{ $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | select -first 1"), null));
+          $iphost.AddressList | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -first 1"), null));
             td24.Members.Add("IPV6Address",
                 new ScriptPropertyData(@"IPV6Address", GetScriptBlock(@"$iphost = [System.Net.Dns]::GetHostEntry($this.address)
-          $iphost.AddressList | ?{ $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6 } | select -first 1"), null));
+          $iphost.AddressList | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6 } | Select-Object -first 1"), null));
             yield return td24;
 
             var td25 = new TypeData(@"System.Management.ManagementObject#root\cimv2\Win32_Process", true);
@@ -1089,30 +1092,7 @@ namespace System.Management.Automation.Runspaces
           $ProgressPreference = 'SilentlyContinue'
           try
           {
-          if ($psversiontable.psversion.Major -lt 3)
-          {
-          # ok to cast CommandTypes enum to HelpCategory because string/identifier for
-          # cmdlet,function,filter,alias,externalscript is identical.
-          # it is ok to fail for other enum values (i.e. for Application)
-          $commandName = $this.Name
-          if ($this.ModuleName)
-          {
-          $commandName = ""{0}\{1}"" -f $this.ModuleName,$commandName
-          }
-
-          $helpObject = get-help -Name $commandName -Category ([string]($this.CommandType)) -ErrorAction SilentlyContinue
-
-          # return first non-null uri (and try not to hit any strict mode things)
-          if ($helpObject -eq $null) { return $null }
-          if ($helpObject.psobject.properties['relatedLinks'] -eq $null) { return $null }
-          if ($helpObject.relatedLinks.psobject.properties['navigationLink'] -eq $null) { return $null }
-          $helpUri = [string]$( $helpObject.relatedLinks.navigationLink | %{ if ($_.psobject.properties['uri'] -ne $null) { $_.uri } } | ?{ $_ } | select -first 1 )
-          return $helpUri
-          }
-          else
-          {
           [Microsoft.PowerShell.Commands.GetHelpCodeMethods]::GetHelpUri($this)
-          }
           }
           catch {}
           finally
@@ -1296,9 +1276,9 @@ namespace System.Management.Automation.Runspaces
 
             var td165 = new TypeData(@"System.Management.Automation.CallStackFrame", true);
             td165.Members.Add("Command",
-                new ScriptPropertyData(@"Command", GetScriptBlock(@"if ($this.InvocationInfo -eq $null) { return $this.FunctionName }
+                new ScriptPropertyData(@"Command", GetScriptBlock(@"if ($null -eq $this.InvocationInfo) { return $this.FunctionName }
           $commandInfo = $this.InvocationInfo.MyCommand
-          if ($commandInfo -eq $null) { return $this.InvocationInfo.InvocationName }
+          if ($null -eq $commandInfo) { return $this.InvocationInfo.InvocationName }
           if ($commandInfo.Name -ne """") { return $commandInfo.Name }
           return $this.FunctionName"), null));
             td165.Members.Add("Location",
@@ -1356,7 +1336,7 @@ namespace System.Management.Automation.Runspaces
           trap { }
           $private:dacls = """";
           $private:first = $true
-          $private:sd.DiscretionaryAcl | % {
+          $private:sd.DiscretionaryAcl | ForEach-Object {
           trap { }
           if ($private:first)
           {
@@ -1376,10 +1356,10 @@ namespace System.Management.Automation.Runspaces
             var td167 = new TypeData(@"Microsoft.Management.Infrastructure.CimInstance#root/cimv2/Win32_PingStatus", true);
             td167.Members.Add("IPV4Address",
                 new ScriptPropertyData(@"IPV4Address", GetScriptBlock(@"$iphost = [System.Net.Dns]::GetHostEntry($this.address)
-          $iphost.AddressList | ?{ $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | select -first 1"), null));
+          $iphost.AddressList | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -first 1"), null));
             td167.Members.Add("IPV6Address",
                 new ScriptPropertyData(@"IPV6Address", GetScriptBlock(@"$iphost = [System.Net.Dns]::GetHostEntry($this.address)
-          $iphost.AddressList | ?{ $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6 } | select -first 1"), null));
+          $iphost.AddressList | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6 } | Select-Object -first 1"), null));
             yield return td167;
 
             var td168 = new TypeData(@"Microsoft.Management.Infrastructure.CimInstance#root/cimv2/Win32_Process", true);
@@ -1982,6 +1962,22 @@ namespace System.Management.Automation.Runspaces
             var td251 = new TypeData(@"Deserialized.System.Management.Automation.DebuggerCommandResults", true);
             td251.TargetTypeForDeserialization = typeof(Microsoft.PowerShell.DeserializingTypeConverter);
             yield return td251;
+
+            var td252 = new TypeData(@"System.Version#IncludeLabel", true);
+            td252.Members.Add("ToString",
+                new ScriptMethodData(@"ToString", GetScriptBlock(@"
+          $suffix = """"
+          if (![String]::IsNullOrEmpty($this.PSSemVerPreReleaseLabel))
+          {
+              $suffix = ""-""+$this.PSSemVerPreReleaseLabel
+          }
+          if (![String]::IsNullOrEmpty($this.PSSemVerBuildLabel))
+          {
+              $suffix += ""+""+$this.PSSemVerBuildLabel
+          }
+          ""$($this.Major).$($this.Minor).$($this.Build)""+$suffix
+            ")));
+            yield return td252;
         }
     }
 }

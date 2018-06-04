@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
 function Wait-UntilTrue
 {
     [CmdletBinding()]
@@ -11,16 +13,26 @@ function Wait-UntilTrue
 
     # Loop until the script block evaluates to true
     while (-not ($sb.Invoke())) {
-        # Sleep for the specified interval
-        start-sleep -mil $intervalInMilliseconds
-
-        # If the timeout period has passed, throw an exception
-        if (([DateTime]::Now - $startTime).TotalMilliseconds -gt $timeoutInMilliseconds)
-        {
+        # If the timeout period has passed, return false
+        if (([DateTime]::Now - $startTime).TotalMilliseconds -gt $timeoutInMilliseconds) {
             return $false
         }
+        # Sleep for the specified interval
+        Start-Sleep -Milliseconds $intervalInMilliseconds
     }
     return $true
+}
+
+function Wait-FileToBePresent
+{
+    [CmdletBinding()]
+    param (
+        [string]$File,
+        [int]$TimeoutInSeconds = 10,
+        [int]$IntervalInMilliseconds = 100
+    )
+
+    Wait-UntilTrue -sb { Test-Path $File } -TimeoutInMilliseconds ($TimeoutInSeconds*1000) -IntervalInMilliseconds $IntervalInMilliseconds > $null
 }
 
 function Test-IsElevated
@@ -44,27 +56,62 @@ function Test-IsElevated
     }
     return $IsElevated
 }
-#This function follows the pester naming convention
-function ShouldBeErrorId
+function Get-RandomFileName
 {
-    param([Parameter(ValueFromPipeline, Mandatory)]
-        [ScriptBlock]
-        $sb,
-
-        [Parameter(Mandatory, Position=0)]
-        [string]
-        $FullyQualifiedErrorId)
-
-        try
-        {
-            & $sb | Out-Null
-            Throw "No Exception!"
-        }
-        catch
-        {
-            $_.FullyQualifiedErrorId | Should Be $FullyQualifiedErrorId | Out-Null
-            # Write the exception to output that allow us to check later other properies of the exception
-            Write-Output $_
-        }
+    [System.IO.Path]::GetFileNameWithoutExtension([IO.Path]::GetRandomFileName())
 }
 
+#
+# Testhook setting functions
+# note these manipulate private data in the PowerShell engine which will
+# enable us to not actually alter the system or mock returned data
+#
+$SCRIPT:TesthookType = [system.management.automation.internal.internaltesthooks]
+function Test-TesthookIsSet
+{
+    param (
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)]
+        $testhookName
+    )
+    try {
+        return ${Script:TesthookType}.GetField($testhookName, "NonPublic,Static").GetValue($null)
+    }
+    catch {
+        # fall through
+    }
+    return $false
+}
+
+function Enable-Testhook
+{
+    param (
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)]
+        $testhookName
+    )
+    ${Script:TesthookType}::SetTestHook($testhookName, $true)
+}
+
+function Disable-Testhook
+{
+    param (
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)]
+        $testhookName
+    )
+    ${Script:TesthookType}::SetTestHook($testhookName, $false)
+}
+
+function Set-TesthookResult
+{
+    param (
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)]
+        $testhookName,
+        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory=$true)]
+        $value
+    )
+    ${Script:TesthookType}::SetTestHook($testhookName, $value)
+}

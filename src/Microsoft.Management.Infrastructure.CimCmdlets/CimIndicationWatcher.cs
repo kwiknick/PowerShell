@@ -1,7 +1,5 @@
-/*============================================================================
- * Copyright (C) Microsoft Corporation, All rights reserved.
- *============================================================================
- */
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 #region Using directives
 
@@ -258,9 +256,7 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
         /// If set EnableRaisingEvents to false, which will be ignored
         /// </para>
         /// </summary>
-#if !CORECLR
         [BrowsableAttribute(false)]
-#endif
         public bool EnableRaisingEvents
         {
             get

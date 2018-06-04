@@ -1,7 +1,5 @@
-//
-// Copyright (c) 2008 Microsoft Corporation. All rights reserved.
-//
-
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Text;
@@ -26,7 +24,6 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Powershell.Commands.GetCounter.PdhNative;
 using Microsoft.PowerShell.Commands.GetCounter;
 using Microsoft.PowerShell.Commands.Diagnostics.Common;
-
 
 namespace Microsoft.PowerShell.Commands
 {
@@ -54,7 +51,6 @@ namespace Microsoft.PowerShell.Commands
         private string _path;
         private string _resolvedPath;
 
-
         //
         // Format parameter.
         // Valid strings are "blg", "csv", "tsv" (case-insensitive).
@@ -65,14 +61,13 @@ namespace Microsoft.PowerShell.Commands
                 ValueFromPipelineByPropertyName = false,
                 HelpMessageBaseName = "GetEventResources")]
         [ValidateNotNull]
+        [ValidateSet("blg", "csv", "tsv")]
         public string FileFormat
         {
             get { return _format; }
             set { _format = value; }
         }
-        private string _format = "BLG";
-
-
+        private string _format = "blg";
 
         //
         // MaxSize parameter
@@ -86,7 +81,6 @@ namespace Microsoft.PowerShell.Commands
             set { _maxSize = value; }
         }
         private UInt32 _maxSize = 0;
-
 
         //
         // InputObject parameter
@@ -107,7 +101,6 @@ namespace Microsoft.PowerShell.Commands
             set { _counterSampleSets = value; }
         }
         private PerformanceCounterSampleSet[] _counterSampleSets = new PerformanceCounterSampleSet[0];
-
 
         //
         // Force switch
@@ -132,8 +125,6 @@ namespace Microsoft.PowerShell.Commands
             set { _circular = value; }
         }
         private SwitchParameter _circular;
-
-
 
         private ResourceManager _resourceMgr = null;
 
@@ -180,9 +171,9 @@ namespace Microsoft.PowerShell.Commands
             _resourceMgr = Microsoft.PowerShell.Commands.Diagnostics.Common.CommonUtilities.GetResourceManager();
 
             //
-            // Validate the Format and CounterSamples arguments
+            // Set output format (log file type)
             //
-            ValidateFormat();
+            SetOutputFormat();
 
             if (Circular.IsPresent && _maxSize == 0)
             {
@@ -211,7 +202,6 @@ namespace Microsoft.PowerShell.Commands
         {
             _pdhHelper.Dispose();
         }
-
 
         ///
         /// Handle Control-C
@@ -278,7 +268,6 @@ namespace Microsoft.PowerShell.Commands
                 _queryInitialized = true;
             }
 
-
             foreach (PerformanceCounterSampleSet set in _counterSampleSets)
             {
                 _pdhHelper.ResetRelogValues();
@@ -311,26 +300,20 @@ namespace Microsoft.PowerShell.Commands
             }
         }
 
-        // ValidateFormat() helper.
-        // Validates Format argument: only "BLG", "TSV" and "CSV" are valid strings (case-insensitive)
+        // Determines Log File Type based on FileFormat parameter
         //
-        private void ValidateFormat()
+        private void SetOutputFormat()
         {
             switch (_format.ToLowerInvariant())
             {
-                case "blg":
-                    _outputFormat = PdhLogFileType.PDH_LOG_TYPE_BINARY;
-                    break;
                 case "csv":
                     _outputFormat = PdhLogFileType.PDH_LOG_TYPE_CSV;
                     break;
                 case "tsv":
                     _outputFormat = PdhLogFileType.PDH_LOG_TYPE_TSV;
                     break;
-                default:
-                    string msg = string.Format(CultureInfo.InvariantCulture, _resourceMgr.GetString("CounterInvalidFormat"), _format);
-                    Exception exc = new Exception(msg);
-                    ThrowTerminatingError(new ErrorRecord(exc, "CounterInvalidFormat", ErrorCategory.InvalidArgument, null));
+                default:  // By default file format is blg
+                    _outputFormat = PdhLogFileType.PDH_LOG_TYPE_BINARY;
                     break;
             }
         }

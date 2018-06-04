@@ -4,7 +4,7 @@
  *
  * This source code is subject to terms and conditions of the Apache License, Version 2.0. A
  * copy of the license can be found in the License.html file at the root of this distribution. If
- * you cannot locate the  Apache License, Version 2.0, please send an email to
+ * you cannot locate the Apache License, Version 2.0, please send an email to
  * dlr@microsoft.com. By using this source code in any fashion, you are agreeing to be bound
  * by the terms of the Apache License, Version 2.0.
  *
@@ -149,9 +149,8 @@ namespace System.Management.Automation.Interpreter
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
         public static Instruction Create(Type type)
         {
-            var typeInfo = type.GetTypeInfo();
             // Boxed enums can be unboxed as their underlying types:
-            var typeToUse = typeInfo.IsEnum ? Enum.GetUnderlyingType(type) : type;
+            var typeToUse = type.IsEnum ? Enum.GetUnderlyingType(type) : type;
             switch (typeToUse.GetTypeCode())
             {
                 case TypeCode.Boolean: return s_boolean ?? (s_boolean = new EqualBoolean());
@@ -170,7 +169,7 @@ namespace System.Management.Automation.Interpreter
                 case TypeCode.Double: return s_double ?? (s_double = new EqualDouble());
 
                 case TypeCode.Object:
-                    if (!typeInfo.IsValueType)
+                    if (!type.IsValueType)
                     {
                         return s_reference ?? (s_reference = new EqualReference());
                     }

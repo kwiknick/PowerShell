@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
@@ -12,7 +11,7 @@ using COM = System.Runtime.InteropServices.ComTypes;
 namespace System.Management.Automation
 {
     /// <summary>
-    /// Defines a property in the  COM object.
+    /// Defines a property in the COM object.
     /// </summary>
     internal class ComProperty
     {
@@ -23,7 +22,6 @@ namespace System.Management.Automation
         private int _setterByRefIndex;
         private int _getterIndex;
         private COM.ITypeInfo _typeInfo;
-
 
         /// <summary>
         /// Initializes a new instance of ComProperty.
@@ -59,7 +57,7 @@ namespace System.Management.Automation
                     try
                     {
                         _typeInfo.GetFuncDesc(GetFuncDescIndex(), out pFuncDesc);
-                        COM.FUNCDESC funcdesc = ClrFacade.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
+                        COM.FUNCDESC funcdesc = Marshal.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
 
                         if (IsGettable)
                         {
@@ -112,7 +110,6 @@ namespace System.Management.Automation
         /// </summary>
         internal bool IsParameterized { get; private set; } = false;
 
-
         /// <summary>
         /// Returns the number of parameters in this property.
         /// This is applicable only for parameterized properties.
@@ -140,7 +137,6 @@ namespace System.Management.Automation
         ///  Defines whether this property is gettable.
         /// </summary>
         internal bool IsGettable { get; private set; } = false;
-
 
         /// <summary>
         /// Get value of this property
@@ -215,8 +211,6 @@ namespace System.Management.Automation
 
             return null;
         }
-
-
 
         /// <summary>
         /// Sets value of this property.
@@ -298,7 +292,6 @@ namespace System.Management.Automation
             }
         }
 
-
         /// <summary>
         /// Updates the COM property with setter and getter information.
         /// </summary>
@@ -347,7 +340,7 @@ namespace System.Management.Automation
             try
             {
                 _typeInfo.GetFuncDesc(GetFuncDescIndex(), out pFuncDesc);
-                COM.FUNCDESC funcdesc = ClrFacade.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
+                COM.FUNCDESC funcdesc = Marshal.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
 
                 return ComUtil.GetMethodSignatureFromFuncDesc(_typeInfo, funcdesc, !IsGettable);
             }

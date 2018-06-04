@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
@@ -39,6 +38,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         public new Int32 ThrottleLimit { set { } get { return 0; } }
         private ObjectStream _stream;
+        private RemoteRunspace _tempRunspace;
 
         #endregion
 
@@ -534,6 +534,17 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         protected override void StopProcessing()
         {
+            var remoteRunspace = _tempRunspace;
+            if (remoteRunspace != null)
+            {
+                try
+                {
+                    remoteRunspace.CloseAsync();
+                }
+                catch (InvalidRunspaceStateException) { }
+                return;
+            }
+
             IHostSupportsInteractiveSession host = this.Host as IHostSupportsInteractiveSession;
             if (host == null)
             {
@@ -1270,11 +1281,18 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         private RemoteRunspace GetRunspaceForSSHSession()
         {
-            var sshConnectionInfo = new SSHConnectionInfo(this.UserName, ResolveComputerName(HostName), this.KeyFilePath, this.Port);
+            ParseSshHostName(HostName, out string host, out string userName, out int port);
+            var sshConnectionInfo = new SSHConnectionInfo(userName, host, this.KeyFilePath, port, this.Subsystem);
             var typeTable = TypeTable.LoadDefaultTypeFiles();
-            var remoteRunspace = RunspaceFactory.CreateRunspace(sshConnectionInfo, this.Host, typeTable) as RemoteRunspace;
-            remoteRunspace.Open();
-            remoteRunspace.ShouldCloseOnPop = true;
+
+            // Use the class _tempRunspace field while the runspace is being opened so that StopProcessing can be handled at that time.
+            // This is only needed for SSH sessions where a Ctrl+C during an SSH password prompt can abort the session before a connection
+            // is established.
+            _tempRunspace = RunspaceFactory.CreateRunspace(sshConnectionInfo, this.Host, typeTable) as RemoteRunspace;
+            _tempRunspace.Open();
+            _tempRunspace.ShouldCloseOnPop = true;
+            var remoteRunspace = _tempRunspace;
+            _tempRunspace = null;
 
             return remoteRunspace;
         }

@@ -2,11 +2,22 @@
 
 ## Release Steps
 
-> Note: Step 2, 3 and 4 can be done in parallel. Step 5 and 6 can be done in parallel.
+When creating a release milestone, you should send meeting invites to maintainers to book the release day and the previous day.
+This is to make sure they have enough time to work on the release.
 
-1. Create a branch named `release` in `PowerShell/PowerShell` repository. All release related changes should happen in this branch.
+The following release procedure should be started on the previous day of the target release day.
+This is to make sure we have enough buffer time to publish the release on the target day.
+
+Before starting the following release procedure, open an issue and list all those steps as to-do tasks.
+Check the task when you finish one.
+This is to help track the release preparation work.
+
+> Note: Step 2, 3 and 4 can be done in parallel.
+
+1. Create a branch named `release-<Release Tag>` in our private repository.
+   All release related changes should happen in this branch.
 1. Prepare packages
-   - [Build release packages](#building-packages)
+   - [Build release packages](#building-packages).
    - Sign the MSI packages and DEB/RPM packages.
    - Install and verify the packages.
 1. Update documentation, scripts and Dockerfiles
@@ -14,17 +25,17 @@
    - Update [CHANGELOG.md](../../CHANGELOG.md) with the finalized change log draft.
    - Update other documents and scripts to use the new package names and links.
 1. Verify the release Dockerfiles.
-1. Publish Linux packages to Microsoft YUM/APT repositories.
 1. [Create NuGet packages](#nuget-packages) and publish them to [powershell-core feed][ps-core-feed].
 1. [Create the release tag](#release-tag) and push the tag to `PowerShell/PowerShell` repository.
-1. Merge the `release` branch to `master` and delete the `release` branch.
-1. Publish the release in Github.
+1. Create the draft and publish the release in Github.
+1. Merge the `release-<Release Tag>` branch to `master` in `powershell/powershell` and delete the `release-<Release Tag>` branch.
+1. Publish Linux packages to Microsoft YUM/APT repositories.
 1. Trigger the release docker builds for Linux and Windows container images.
    - Linux: push a branch named `docker` to `powershell/powershell` repository to trigger the build at [powershell docker hub](https://hub.docker.com/r/microsoft/powershell/builds/).
      Delete the `docker` branch once the builds succeed.
    - Windows: queue a new build in `PowerShell Windows Docker Build` on VSTS.
 1. Verify the generated docker container images.
-1. [Update the homebrew formula](#homebrew) for the OSX package.
+1. [Update the homebrew formula](#homebrew) for the macOS package.
    This task usually will be taken care of by the community,
    so we can wait for one day or two and see if the homebrew formula has already been updated,
    and only do the update if it hasn't.
@@ -32,7 +43,7 @@
 ## Building Packages
 
 > Note: Linux and Windows packages are taken care of by our release build pipeline in VSTS,
-while the OSX package needs to be built separately on a macOS.
+while the macOS package needs to be built separately on a macOS.
 
 The release build should be started based on the `release` branch.
 The release Git tag won't be created until all release preparation tasks are done,
@@ -46,8 +57,8 @@ not `/home/username/src/PowerShell/...`.
 
 ### Packaging Overview
 
-The `build.psm1` module contains a `Start-PSPackage` function to build packages.
-It **requires** that PowerShell Core has been built via `Start-PSBuild`.
+The `tools/packaging` module contains a `Start-PSPackage` function to build packages.
+It **requires** that PowerShell Core has been built via `Start-PSBuild` from the `build.psm1` module.
 
 #### Windows
 
@@ -69,7 +80,7 @@ The `Start-PSPackage` function delegates to `New-UnixPackage`.
 It relies on the [Effing Package Management][fpm] project,
 which makes building packages for any (non-Windows) platform a breeze.
 Similarly, the PowerShell man-page is generated from the Markdown-like file
-[`assets/powershell.1.ronn`][man] using [Ronn][].
+[`assets/pwsh.1.ronn`][man] using [Ronn][].
 The function `Start-PSBootstrap -Package` will install both these tools.
 
 To modify any property of the packages, edit the `New-UnixPackage` function.
@@ -83,7 +94,7 @@ license, category, dependencies, and file layout).
 To support side-by-side Unix packages, we use the following design:
 
 We will maintain a `powershell` package
-which owns the `/usr/bin/powershell` symlink,
+which owns the `/usr/bin/pwsh` symlink,
 is the latest version, and is upgradeable.
 This is the only package named `powershell`
 and similarly is the only package owning any symlinks,
@@ -125,7 +136,7 @@ Without `-Name` specified, the primary `powershell`
 package will instead be created.
 
 [fpm]: https://github.com/jordansissel/fpm
-[man]: ../../assets/powershell.1.ronn
+[man]: ../../assets/pwsh.1.ronn
 [ronn]: https://github.com/rtomayko/ronn
 
 ### Build and Packaging Examples
@@ -149,37 +160,22 @@ On Windows, the `-Runtime` parameter should be specified for `Start-PSBuild` to 
 # Install dependencies
 Start-PSBootstrap -Package
 
-# Build for v6.0.0-beta.1 release targeting Windows 10 and Server 2016
-Start-PSBuild -Clean -CrossGen -PSModuleRestore -Runtime win10-x64 -Configuration Release -ReleaseTag v6.0.0-beta.1
+# Build for v6.0.0-beta.1 release targeting Windows universal package, set -Runtime to win7-x64
+Start-PSBuild -Clean -CrossGen -PSModuleRestore -Runtime win7-x64 -Configuration Release -ReleaseTag v6.0.0-beta.1
 ```
 
-If the package is targeting a downlevel Windows (not Windows 10 or Server 2016),
-the `-WindowsDownLevel` parameter should be specified for `Start-PSPackage`.
-Otherwise, the `-WindowsDownLevel` parameter should be left out.
-
 ```powershell
-# Create packages for v6.0.0-beta.1 release targeting Windows 10 and Server 2016.
-# When creating packages for downlevel Windows, such as Windows 8.1 or Server 2012R2,
-# the parameter '-WindowsDownLevel' must be specified.
-Start-PSPackage -Type msi -ReleaseTag v6.0.0-beta.1 <# -WindowsDownLevel win81-x64 #>
-Start-PSPackage -Type zip -ReleaseTag v6.0.0-beta.1 <# -WindowsDownLevel win81-x64 #>
+# Create packages for v6.0.0-beta.1 release targeting Windows universal package.
+# 'win7-x64' / 'win7-x86' should be used for -WindowsRuntime.
+Start-PSPackage -Type msi -ReleaseTag v6.0.0-beta.1 -WindowsRuntime 'win7-x64'
+Start-PSPackage -Type zip -ReleaseTag v6.0.0-beta.1 -WindowsRuntime 'win7-x64'
 ```
 
 ## NuGet Packages
 
-In the `release` branch, run `Publish-NuGetFeed` to generate PowerShell NuGet packages:
-
-```powershell
-# Assume the to-be-used release tag is 'v6.0.0-beta.1'
-$VersionSuffix = ("v6.0.0-beta.1" -split '-')[-1]
-
-# Generate NuGet packages
-Publish-NuGetFeed -VersionSuffix $VersionSuffix
-```
-
-PowerShell NuGet packages and the corresponding symbol packages will be generated at `PowerShell/nuget-artifacts` by default.
-Currently the NuGet packages published to [powershell-core feed][ps-core-feed] only contain assemblies built for Windows.
-Maintainers are working on including the assemblies built for non-Windows platforms.
+The NuGet packages for hosting PowerShell for Windows and non-Windows are being built in our release build pipeline.
+The assemblies from the individual Windows and Linux builds are consumed and packed into NuGet packages.
+These are then released to [powershell-core feed][ps-core-feed].
 
 [ps-core-feed]: https://powershell.myget.org/gallery/powershell-core
 

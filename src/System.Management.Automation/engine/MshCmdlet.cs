@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.IO;
 using System.Collections;
@@ -445,7 +444,7 @@ namespace System.Management.Automation
             }
 
             CmdletAttribute ca = null;
-            foreach (var attr in cmdletType.GetTypeInfo().GetCustomAttributes(true))
+            foreach (var attr in cmdletType.GetCustomAttributes(true))
             {
                 ca = attr as CmdletAttribute;
                 if (ca != null)
@@ -686,7 +685,7 @@ namespace System.Management.Automation
         /// <exception cref="FlowControlException"></exception>
         public Collection<PSObject> InvokeScript(string script, params object[] args)
         {
-            return InvokeScript(script, true, PipelineResultTypes.None, args);
+            return InvokeScript(script, true, PipelineResultTypes.None, null, args);
         }
 
         /// <summary>
@@ -712,7 +711,12 @@ namespace System.Management.Automation
             try
             {
                 _context.EngineSessionState = sessionState.Internal;
-                return InvokeScript(scriptBlock, false, PipelineResultTypes.None, null, args);
+                return InvokeScript(
+                    sb:scriptBlock,
+                    useNewScope:false,
+                    writeToPipeline:PipelineResultTypes.None,
+                    input:null,
+                    args:args);
             }
             finally
             {

@@ -4,7 +4,7 @@
  *
  * This source code is subject to terms and conditions of the Apache License, Version 2.0. A
  * copy of the license can be found in the License.html file at the root of this distribution. If
- * you cannot locate the  Apache License, Version 2.0, please send an email to
+ * you cannot locate the Apache License, Version 2.0, please send an email to
  * ironpy@microsoft.com. By using this source code in any fashion, you are agreeing to be bound
  * by the terms of the Apache License, Version 2.0.
  *
@@ -98,11 +98,10 @@ namespace System.Management.Automation.Interpreter {
                 return new ActionCallInstruction(target);
             }
 
-            var typeInfo = t.GetTypeInfo();
-            if (typeInfo.IsEnum) return SlowCreate(target, pi);
+            if (t.IsEnum) return SlowCreate(target, pi);
             switch (t.GetTypeCode()) {
                 case TypeCode.Object: {
-                    if (t != typeof(object) && (IndexIsNotReturnType(0, target, pi) || typeInfo.IsValueType)) {
+                    if (t != typeof(object) && (IndexIsNotReturnType(0, target, pi) || t.IsValueType)) {
                         // if we're on the return type relaxed delegates makes it ok to use object
                         goto default;
                     }
@@ -136,11 +135,10 @@ namespace System.Management.Automation.Interpreter {
                 return new FuncCallInstruction<T0>(target);
             }
 
-            var typeInfo = t.GetTypeInfo();
-            if (typeInfo.IsEnum) return SlowCreate(target, pi);
+            if (t.IsEnum) return SlowCreate(target, pi);
             switch (t.GetTypeCode()) {
                 case TypeCode.Object: {
-                    if (t != typeof(object) && (IndexIsNotReturnType(1, target, pi) || typeInfo.IsValueType)) {
+                    if (t != typeof(object) && (IndexIsNotReturnType(1, target, pi) || t.IsValueType)) {
                         // if we're on the return type relaxed delegates makes it ok to use object
                         goto default;
                     }
@@ -174,12 +172,11 @@ namespace System.Management.Automation.Interpreter {
                 return new FuncCallInstruction<T0, T1>(target);
             }
 
-            var typeInfo = t.GetTypeInfo();
-            if (typeInfo.IsEnum) return SlowCreate(target, pi);
+            if (t.IsEnum) return SlowCreate(target, pi);
             switch (t.GetTypeCode()) {
                 case TypeCode.Object: {
                     Debug.Assert(pi.Length == 2);
-                    if (typeInfo.IsValueType) goto default;
+                    if (t.IsValueType) goto default;
 
                     return new FuncCallInstruction<T0, T1, Object>(target);
                 }

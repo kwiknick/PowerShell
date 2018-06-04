@@ -1,6 +1,5 @@
-/********************************************************************++
- * Copyright (c) Microsoft Corporation.  All rights reserved.
- * --********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 /*
  * Common file that contains implementation for both server and client transport
@@ -65,9 +64,7 @@ namespace System.Management.Automation.Remoting
             XmlReaderSettings.CheckCharacters = false;
             XmlReaderSettings.IgnoreComments = true;
             XmlReaderSettings.IgnoreProcessingInstructions = true;
-#if !CORECLR  // No XmlReaderSettings.XmlResolver in CoreCLR
             XmlReaderSettings.XmlResolver = null;
-#endif
             XmlReaderSettings.ConformanceLevel = ConformanceLevel.Fragment;
         }
 
@@ -378,7 +375,6 @@ namespace System.Management.Automation.Remoting
         #endregion
     }
 
-
     /// <summary>
     /// A wrapper around TextWriter to allow for synchronized writing to a stream.
     /// Synchronization is required to avoid collision when multiple TransportManager's
@@ -627,7 +623,7 @@ namespace System.Management.Automation.Remoting.Client
             lock (syncObject)
             {
                 // We always need to remove commands from collection, even if isClosed is true.
-                // If we don't then we hang because CloseAsync() will not complete until all
+                // If we don't then we will not respond because CloseAsync() will not complete until all
                 // commands are closed.
                 if (!_cmdTransportManagers.Remove(key))
                 {
@@ -950,7 +946,7 @@ namespace System.Management.Automation.Remoting.Client
         #region Overrides
 
         /// <summary>
-        /// Launch a new Process (PowerShell.exe -s) to perform remoting. This is used by *-Job cmdlets
+        /// Launch a new Process (pwsh -s) to perform remoting. This is used by *-Job cmdlets
         /// to support background jobs without depending on WinRM (WinRM has complex requirements like
         /// elevation to support local machine remoting)
         /// </summary>
@@ -1401,10 +1397,11 @@ namespace System.Management.Automation.Remoting.Client
         #region Data
 
         private SSHConnectionInfo _connectionInfo;
-        private Process _sshProcess;
+        private int _sshProcessId;
         private StreamWriter _stdInWriter;
         private StreamReader _stdOutReader;
         private StreamReader _stdErrReader;
+        private bool _connectionEstablished;
         private const string _threadName = "SSHTransport Reader Thread";
 
         #endregion
@@ -1448,7 +1445,7 @@ namespace System.Management.Automation.Remoting.Client
         internal override void CreateAsync()
         {
             // Create the ssh client process with connection to host target.
-            _sshProcess = _connectionInfo.StartSSHProcess(
+            _sshProcessId = _connectionInfo.StartSSHProcess(
                 out _stdInWriter,
                 out _stdOutReader,
                 out _stdErrReader);
@@ -1461,6 +1458,17 @@ namespace System.Management.Automation.Remoting.Client
 
             // Create reader thread and send first PSRP message.
             StartReaderThread(_stdOutReader);
+        }
+
+        internal override void CloseAsync()
+        {
+            base.CloseAsync();
+
+            if (!_connectionEstablished)
+            {
+                // If the connection is not yet estalished then clean up any existing connection state.
+                CloseConnection();
+            }
         }
 
         #endregion
@@ -1478,14 +1486,22 @@ namespace System.Management.Automation.Remoting.Client
             var stdErrReader = _stdErrReader;
             if (stdErrReader != null) { stdErrReader.Dispose(); }
 
-            var sshProcess = _sshProcess;
-            if ((sshProcess != null) && !sshProcess.HasExited)
+            // The CloseConnection() method can be called multiple times from multiple places.
+            // Set the _sshProcessId to zero here so that we go through the work of finding
+            // and terminating the SSH process just once.
+            var sshProcessId = _sshProcessId;
+            _sshProcessId = 0;
+            if (sshProcessId != 0)
             {
-                _sshProcess = null;
                 try
                 {
-                    sshProcess.Kill();
+                    var sshProcess = System.Diagnostics.Process.GetProcessById(sshProcessId);
+                    if ((sshProcess != null) && (sshProcess.Handle != IntPtr.Zero) && !sshProcess.HasExited)
+                    {
+                        sshProcess.Kill();
+                    }
                 }
+                catch (ArgumentException) { }
                 catch (InvalidOperationException) { }
                 catch (NotSupportedException) { }
                 catch (System.ComponentModel.Win32Exception) { }
@@ -1511,8 +1527,10 @@ namespace System.Management.Automation.Remoting.Client
                 while (true)
                 {
                     string error = ReadError(reader);
-                    if (string.IsNullOrEmpty(error))
+
+                    if (error.Length == 0)
                     {
+                        // Ignore
                         continue;
                     }
 
@@ -1524,6 +1542,10 @@ namespace System.Management.Automation.Remoting.Client
                     HandleSSHError(psrte);
                 }
             }
+            catch (ObjectDisposedException)
+            {
+                // Normal reader thread end.
+            }
             catch (Exception e)
             {
                 string errorMsg = (e.Message != null) ? e.Message : string.Empty;
@@ -1531,7 +1553,7 @@ namespace System.Management.Automation.Remoting.Client
                     "Transport manager error thread ended with error: {0}", errorMsg);
 
                 PSRemotingTransportException psrte = new PSRemotingTransportException(
-                    StringUtil.Format(RemotingErrorIdStrings.SSHClientEndWithErrorMessage, errorMsg), 
+                    StringUtil.Format(RemotingErrorIdStrings.SSHClientEndWithErrorMessage, errorMsg),
                     e);
                 HandleSSHError(psrte);
             }
@@ -1548,7 +1570,13 @@ namespace System.Management.Automation.Remoting.Client
             // Blocking read from StdError stream
             string error = reader.ReadLine();
 
-            if (string.IsNullOrEmpty(error) ||
+            if (error == null)
+            {
+                // Stream is closed unexpectedly.
+                throw new PSInvalidOperationException(RemotingErrorIdStrings.SSHAbruptlyTerminated);
+            }
+
+            if ((error.Length == 0) ||
                 error.IndexOf("WARNING:", StringComparison.OrdinalIgnoreCase) > -1)
             {
                 // Handle as interactive warning message
@@ -1611,13 +1639,9 @@ namespace System.Management.Automation.Remoting.Client
                     string data = reader.ReadLine();
                     if (data == null)
                     {
-                        // End of stream indicates the target process was lost.
-                        // Raise transport exception to invalidate the client remote runspace.
-                        PSRemotingTransportException psrte = new PSRemotingTransportException(
-                            PSRemotingErrorId.IPCServerProcessReportedError,
-                            RemotingErrorIdStrings.IPCServerProcessReportedError,
-                            RemotingErrorIdStrings.NamedPipeTransportProcessEnded);
-                        RaiseErrorHandler(new TransportErrorOccuredEventArgs(psrte, TransportMethodEnum.ReceiveShellOutputEx));
+                        // End of stream indicates that the SSH transport is broken.
+                        // SSH will return the appropriate error in StdErr stream so
+                        // let the error reader thread report the error.
                         break;
                     }
 
@@ -1629,6 +1653,9 @@ namespace System.Management.Automation.Remoting.Client
                     }
                     else
                     {
+                        // The first received PSRP message from the server indicates that the connection is established and that PSRP is running.
+                        if (!_connectionEstablished) { _connectionEstablished = true; }
+
                         // Normal output data.
                         HandleOutputDataReceived(data);
                     }
@@ -2398,3 +2425,4 @@ namespace System.Management.Automation.Remoting.Server
         #endregion
     }
 }
+

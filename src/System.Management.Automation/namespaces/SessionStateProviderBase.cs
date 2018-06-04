@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 #pragma warning disable 1634, 1691
 #pragma warning disable 56506
@@ -128,7 +127,6 @@ namespace Microsoft.PowerShell.Commands
             return value;
         } // GetValueOfItem
 
-
         /// <summary>
         /// Determines if the item can be renamed. Derived classes that need
         /// to perform a check should override this method.
@@ -193,7 +191,7 @@ namespace Microsoft.PowerShell.Commands
         } // GetItem
 
         /// <summary>
-        /// Sets a session state item  to a given value
+        /// Sets a session state item to a given value
         /// </summary>
         ///
         /// <param name="name">
@@ -1145,7 +1143,6 @@ namespace Microsoft.PowerShell.Commands
         #endregion
         #endregion
     } // SessionStateProviderBase
-
 
     /// <summary>
     /// The content reader/writer for all providers deriving from SessionStateProviderBase

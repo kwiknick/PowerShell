@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.ObjectModel;
@@ -145,7 +144,7 @@ namespace Microsoft.PowerShell.Commands
                                 string errorMsg = StringUtil.Format(Modules.InvalidModuleManifest, module.RootModule, filePath);
                                 var errorRecord = new ErrorRecord(new ArgumentException(errorMsg), "Modules_InvalidRootModuleInModuleManifest",
                                         ErrorCategory.InvalidArgument, _path);
-                                WriteError(errorRecord);                            
+                                WriteError(errorRecord);
                             }
                         }
 
@@ -160,7 +159,7 @@ namespace Microsoft.PowerShell.Commands
                             foreach (ModuleSpecification nestedModule in nestedModules)
                             {
                                 if (!IsValidFilePath(nestedModule.Name, module, true)
-                                    && !IsValidFilePath(nestedModule.Name + StringLiterals.DependentWorkflowAssemblyExtension, module, true)
+                                    && !IsValidFilePath(nestedModule.Name + StringLiterals.PowerShellILAssemblyExtension, module, true)
                                     && !IsValidFilePath(nestedModule.Name + StringLiterals.PowerShellNgenAssemblyExtension, module, true)
                                     && !IsValidFilePath(nestedModule.Name + StringLiterals.PowerShellModuleFileExtension, module, true)
                                     && !IsValidGacAssembly(nestedModule.Name))
@@ -183,7 +182,7 @@ namespace Microsoft.PowerShell.Commands
                         {
                             foreach (ModuleSpecification requiredModule in requiredModules)
                             {
-                                var modules = GetModule(new[] { requiredModule.Name }, false, true);
+                                var modules = GetModule(new[] { requiredModule.Name }, all: false, refresh: true);
                                 if (modules.Count == 0)
                                 {
                                     string errorMsg = StringUtil.Format(Modules.InvalidRequiredModulesinModuleManifest, requiredModule.Name, filePath);
@@ -216,7 +215,7 @@ namespace Microsoft.PowerShell.Commands
                         {
                             foreach (ModuleSpecification moduleListModule in moduleListModules)
                             {
-                                var modules = GetModule(new[] { moduleListModule.Name }, true, true);
+                                var modules = GetModule(new[] { moduleListModule.Name }, all: false, refresh: true);
                                 if (modules.Count == 0)
                                 {
                                     string errorMsg = StringUtil.Format(Modules.InvalidModuleListinModuleManifest, moduleListModule.Name, filePath);
@@ -310,11 +309,11 @@ namespace Microsoft.PowerShell.Commands
                     string message = StringUtil.Format(Modules.InvalidModuleManifestPath, path);
                     InvalidOperationException ioe = new InvalidOperationException(message);
                     ErrorRecord er = new ErrorRecord(ioe, "Modules_InvalidModuleManifestPath", ErrorCategory.InvalidArgument, path);
-                    ThrowTerminatingError(er);                    
+                    ThrowTerminatingError(er);
                 }
                 path = pathInfos[0].Path;
 
-                // First, we validate if the path  does exist.
+                // First, we validate if the path does exist.
                 if (!File.Exists(path) && !Directory.Exists(path))
                 {
                     return false;
@@ -350,9 +349,9 @@ namespace Microsoft.PowerShell.Commands
             string gacPath = System.Environment.GetEnvironmentVariable("windir") + "\\Microsoft.NET\\assembly";
             string assemblyFile = assemblyName;
             string ngenAssemblyFile = assemblyName;
-            if (!assemblyName.EndsWith(StringLiterals.DependentWorkflowAssemblyExtension, StringComparison.OrdinalIgnoreCase))
+            if (!assemblyName.EndsWith(StringLiterals.PowerShellILAssemblyExtension, StringComparison.OrdinalIgnoreCase))
             {
-                assemblyFile = assemblyName + StringLiterals.DependentWorkflowAssemblyExtension;
+                assemblyFile = assemblyName + StringLiterals.PowerShellILAssemblyExtension;
                 ngenAssemblyFile = assemblyName + StringLiterals.PowerShellNgenAssemblyExtension;
             }
             try

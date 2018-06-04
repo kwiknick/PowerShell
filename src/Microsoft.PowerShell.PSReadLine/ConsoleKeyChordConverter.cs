@@ -1,5 +1,5 @@
 /********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
+Copyright (c) Microsoft Corporation. All rights reserved.
 --********************************************************************/
 
 using System;
@@ -79,8 +79,11 @@ namespace Microsoft.PowerShell
                 // key should be first token to be popped
                 if (key == 0)
                 {
-                    // the keyChar is this token
-                    keyChar = token[0];
+                    // the keyChar is this token, if not a special key like "Fxx" etc.
+                    if (token.Length == 1)
+                    {
+                        keyChar = token[0];
+                    }
 
                     // Enum.TryParse accepts arbitrary integers.  We shouldn't,
                     // but single digits need to map to the correct key, e.g.

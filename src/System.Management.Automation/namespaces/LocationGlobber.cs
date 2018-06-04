@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -252,7 +251,7 @@ namespace System.Management.Automation
 
                 if (!allowNonexistingPaths &&
                     result.Count < 1 &&
-                    !WildcardPattern.ContainsWildcardCharacters(path) &&
+                    (!WildcardPattern.ContainsWildcardCharacters(path) || context.SuppressWildcardExpansion) &&
                     (context.Include == null || context.Include.Count == 0) &&
                     (context.Exclude == null || context.Exclude.Count == 0))
                 {
@@ -501,6 +500,20 @@ namespace System.Management.Automation
             s_pathResolutionTracer.WriteLine("PROVIDER path: {0}", itemPath);
 
             Collection<string> stringResult = new Collection<string>();
+
+            // if the directory exists, just return it
+            try
+            {
+                if (Utils.NativeDirectoryExists(userPath))
+                {
+                    result.Add(new PathInfo(drive, provider, userPath, _sessionState));
+                    return result;
+                }
+            }
+            catch
+            {
+                // in cases of Access Denied or other errors, fallback to previous behavior and let provider handle it
+            }
 
             if (!context.SuppressWildcardExpansion)
             {
@@ -823,7 +836,6 @@ namespace System.Management.Automation
                     context.Drive = drive;
                 }
 
-
                 Collection<string> paths = new Collection<string>();
 
                 foreach (PathInfo currentPath in
@@ -1037,9 +1049,7 @@ namespace System.Management.Automation
             }
         } // GetGlobbedProviderPathsFromProviderPath
 
-
         #endregion Provider path to provider paths globbing
-
 
         #region Path manipulation
 
@@ -1098,7 +1108,6 @@ namespace System.Management.Automation
             ProviderInfo provider = null;
             return GetProviderPath(path, out provider);
         } // GetProviderPath
-
 
         /// <summary>
         /// Gets a provider specific path when given an Msh path without resolving the
@@ -1665,9 +1674,18 @@ namespace System.Management.Automation
 
                 if (index > 0)
                 {
-                    // We must have a drive specified
-
-                    result = true;
+                    // see if there are any path separators before the colon which would mean the
+                    // colon is part of a file or folder name and not a drive: ./foo:bar vs foo:bar
+                    int separator = path.IndexOf(StringLiterals.DefaultPathSeparator, 0, index-1);
+                    if (separator == -1)
+                    {
+                        separator = path.IndexOf(StringLiterals.AlternatePathSeparator, 0, index-1);
+                    }
+                    if (separator == -1 || index < separator)
+                    {
+                        // We must have a drive specified
+                        result = true;
+                    }
                 }
             } while (false);
 
@@ -1701,7 +1719,6 @@ namespace System.Management.Automation
             }
 
             bool result = false;
-
 
             if (_sessionState.Drive.Current != null)
             {
@@ -1823,7 +1840,6 @@ namespace System.Management.Automation
 
         #region Path manipulation methods
 
-
         /// <summary>
         /// Determines if the given drive name is a "special" name defined
         /// by the shell. For instance, "default", "current", "global", and "scope[##]" are scopes
@@ -1932,7 +1948,7 @@ namespace System.Management.Automation
         /// </param>
         ///
         /// <returns>
-        /// A  provider specific relative path to the root of the drive.
+        /// A provider specific relative path to the root of the drive.
         /// </returns>
         ///
         /// <remarks>
@@ -1996,6 +2012,9 @@ namespace System.Management.Automation
 
             // Check to see if the path is relative or absolute
             bool isPathForCurrentDrive = false;
+
+            // Check to see if the path is to the root of a drive
+            bool isPathForRootOfDrive = false;
 
             if (IsAbsolutePath(path, out driveName))
             {
@@ -2064,6 +2083,12 @@ namespace System.Management.Automation
                         // this is the default behavior for all windows drives, and all non-filesystem
                         // drives on non-windows
                         path = path.Substring(driveName.Length + 1);
+
+                        if (String.IsNullOrEmpty(path))
+                        {
+                            // path was to the root of a drive such as 'c:'
+                            isPathForRootOfDrive = true;
+                        }
                     }
                 }
             }
@@ -2095,14 +2120,23 @@ namespace System.Management.Automation
                 // have access to it.
                 context.Drive = workingDriveForPath;
 
-                string relativePath =
-                    GenerateRelativePath(
-                        workingDriveForPath,
-                        path,
-                        escapeCurrentLocation,
-                        providerInstance,
-                        context);
+                string relativePath = String.Empty;
 
+                if (isPathForRootOfDrive)
+                {
+                    relativePath = context.Drive.Root;
+                }
+                else
+                {
+                    relativePath =
+                        GenerateRelativePath(
+                            workingDriveForPath,
+                            path,
+                            escapeCurrentLocation,
+                            providerInstance,
+                            context);
+                }
+                
                 return relativePath;
             }
             catch (PSNotSupportedException)
@@ -2132,7 +2166,6 @@ namespace System.Management.Automation
             providerPath = providerPath.TrimEnd(StringLiterals.DefaultPathSeparator);
             string driveRoot = drive.Root.Replace(StringLiterals.AlternatePathSeparator, StringLiterals.DefaultPathSeparator);
             driveRoot = driveRoot.TrimEnd(StringLiterals.DefaultPathSeparator);
-
 
             // Keep on lopping off children until the the remaining path
             // is the drive root.
@@ -2172,7 +2205,7 @@ namespace System.Management.Automation
         /// </param>
         ///
         /// <param name="path">
-        /// The relative path to add to the absolute path in the  drive.
+        /// The relative path to add to the absolute path in the drive.
         /// </param>
         ///
         /// <param name="escapeCurrentLocation">
@@ -2372,7 +2405,6 @@ namespace System.Management.Automation
                         continue;
                     }
 
-
                     // Process the current directory symbol "."
 
                     if (path.Equals(currentDirSymbol, StringComparison.OrdinalIgnoreCase))
@@ -2540,7 +2572,6 @@ namespace System.Management.Automation
             return result;
         } // GetProviderSpecificPath
 
-
         /// <summary>
         /// Parses the provider-qualified path into the provider name and
         /// the provider-internal path.
@@ -2590,7 +2621,6 @@ namespace System.Management.Automation
 
             return result;
         } // ParseProviderPath
-
 
         #endregion Path manipulation methods
 
@@ -3306,7 +3336,6 @@ namespace System.Management.Automation
                 throw PSTraceSource.NewArgumentNullException("path");
             }
 
-
             if (drive == null)
             {
                 throw PSTraceSource.NewArgumentNullException("drive");
@@ -3404,21 +3433,27 @@ namespace System.Management.Automation
 
             string result = path;
 
-            // Find the drive separator
+            // Find the drive separator only if it's before a path separator
 
             int index = path.IndexOf(":", StringComparison.Ordinal);
-
             if (index != -1)
             {
-                // Remove the \ or / if it follows the drive indicator
-
-                if (path[index + 1] == '\\' ||
-                    path[index + 1] == '/')
+                int separator = path.IndexOf(StringLiterals.DefaultPathSeparator, 0, index);
+                if (separator == -1)
                 {
-                    ++index;
+                    separator = path.IndexOf(StringLiterals.AlternatePathSeparator, 0, index);
                 }
+                if (separator == -1 || index < separator)
+                {
+                    // Remove the \ or / if it follows the drive indicator
+                    if (path[index + 1] == '\\' ||
+                        path[index + 1] == '/')
+                    {
+                        ++index;
+                    }
 
-                result = path.Substring(index + 1);
+                    result = path.Substring(index + 1);
+                }
             }
 
             return result;
@@ -3451,7 +3486,6 @@ namespace System.Management.Automation
             {
                 throw PSTraceSource.NewArgumentNullException("path");
             }
-
 
             if (provider == null)
             {
@@ -3642,7 +3676,6 @@ namespace System.Management.Automation
                         context.Include,
                         WildcardOptions.IgnoreCase);
 
-
                 // Construct the exclude filter
 
                 Collection<WildcardPattern> excludeMatcher =
@@ -3682,7 +3715,6 @@ namespace System.Management.Automation
                             s_pathResolutionTracer.WriteLine("No child names returned for '{0}'", dir);
                             continue;
                         }
-
 
                         // Loop through each child to see if they match the glob expression
 
@@ -3771,7 +3803,6 @@ namespace System.Management.Automation
                             childPath = GetMshQualifiedPath(childPath, drive);
                         }
 
-
                         if (_sessionState.Internal.ItemExists(childPath, context))
                         {
                             s_tracer.WriteLine("Adding child path to dirs {0}", childPath);
@@ -3782,7 +3813,6 @@ namespace System.Management.Automation
                     }
                 } // foreach (dir in currentDirs)
             } // if (StringContainsGlobCharacters(leafElement))
-
 
             return newDirs;
         } // GenerateNewPSPathsWithGlobLeaf
@@ -4181,7 +4211,6 @@ namespace System.Management.Automation
             return result;
         } // ExpandGlobPath
 
-
         /// <summary>
         /// Generates a collection of containers and/or leaves that are children of the containers
         /// in the currentDirs parameter and match the glob expression in the
@@ -4287,7 +4316,6 @@ namespace System.Management.Automation
                         context.Include,
                         WildcardOptions.IgnoreCase);
 
-
                 // Construct the exclude filter
 
                 Collection<WildcardPattern> excludeMatcher =
@@ -4387,7 +4415,6 @@ namespace System.Management.Automation
                                         context);
                         }
 
-
                         if (provider.ItemExists(childPath, context))
                         {
                             s_tracer.WriteLine("Adding child path to dirs {0}", childPath);
@@ -4399,7 +4426,6 @@ namespace System.Management.Automation
                     }
                 } // foreach (dir in currentDirs)
             } // if (StringContainsGlobCharacters(leafElement))
-
 
             return newDirs;
         } // GenerateNewPathsWithGlobLeaf

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -75,7 +78,7 @@ namespace System.Management.Automation
         /// <param name="allUsersAllHosts">The profile file name for all users and all hosts.</param>
         /// <param name="allUsersCurrentHost">The profile file name for all users and current host.</param>
         /// <param name="currentUserAllHosts">The profile file name for current user and all hosts.</param>
-        /// <param name="currentUserCurrentHost">The profile  name for current user and current host.</param>
+        /// <param name="currentUserCurrentHost">The profile name for current user and current host.</param>
         /// <returns>A PSObject whose base object is currentUserCurrentHost and with notes for the other 4 parameters.</returns>
         internal static PSObject GetDollarProfile(string allUsersAllHosts, string allUsersCurrentHost, string currentUserAllHosts, string currentUserCurrentHost)
         {
@@ -86,7 +89,6 @@ namespace System.Management.Automation
             returnValue.Properties.Add(new PSNoteProperty("CurrentUserCurrentHost", currentUserCurrentHost));
             return returnValue;
         }
-
 
         /// <summary>
         /// Gets an array of commands that can be run sequentially to set $profile and run the profile commands.
@@ -459,7 +461,6 @@ namespace System.Management.Automation
                 }
             }
 
-
             return returnSuggestions;
         }
 
@@ -640,7 +641,6 @@ namespace System.Management.Automation
             int saveCredentials = Convert.ToInt32(save);
             credUiInfo.cbSize = Marshal.SizeOf(credUiInfo);
             credUiInfo.hwndParent = parentHWND;
-
 
             CREDUI_FLAGS flags = CREDUI_FLAGS.DO_NOT_PERSIST;
 
@@ -923,7 +923,7 @@ namespace System.Management.Automation
 
             foreach ($file in $FileName)
             {
-                dir $file -File | foreach {
+                Get-ChildItem $file -File | ForEach-Object {
                     $filePathName = $_.FullName
 
                     # Get file contents
@@ -943,12 +943,7 @@ namespace System.Management.Automation
                 [string] $PSEditFunction
             )
 
-            if ($PSVersionTable.PSVersion -lt ([version] '3.0'))
-            {
-                throw (new-object System.NotSupportedException)
-            }
-
-            Register-EngineEvent -SourceIdentifier PSISERemoteSessionOpenFile -Forward
+            Register-EngineEvent -SourceIdentifier PSISERemoteSessionOpenFile -Forward -SupportEvent
 
             if ((Test-Path -Path 'function:\global:PSEdit') -eq $false)
             {
@@ -960,17 +955,12 @@ namespace System.Management.Automation
         /// RemovePSEditFunction script string.
         /// </summary>
         public const string RemovePSEditFunction = @"
-            if ($PSVersionTable.PSVersion -lt ([version] '3.0'))
-            {
-                throw (new-object System.NotSupportedException)
-            }
-
             if ((Test-Path -Path 'function:\global:PSEdit') -eq $true)
             {
                 Remove-Item -Path 'function:\global:PSEdit' -Force
             }
 
-            Get-EventSubscriber -SourceIdentifier PSISERemoteSessionOpenFile -EA Ignore | Remove-Event
+            Unregister-Event -SourceIdentifier PSISERemoteSessionOpenFile -Force -ErrorAction Ignore
         ";
 
         /// <summary>

@@ -1,6 +1,6 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+#if LEGACYTELEMETRY
 
 using System;
 using System.Collections.Generic;
@@ -53,12 +53,7 @@ namespace Microsoft.PowerShell.Telemetry.Internal
             if (Interlocked.CompareExchange(ref s_anyPowerShellSessionOpen, 1, 0) == 1)
                 return;
 
-            bool is32Bit;
-#if CORECLR
-            is32Bit = IntPtr.Size == 4;
-#else
-            is32Bit = !Environment.Is64BitProcess;
-#endif
+            bool is32Bit = !Environment.Is64BitProcess;
             var psversion = PSVersionInfo.PSVersion.ToString();
             var hostName = Process.GetCurrentProcess().ProcessName;
             if (ihptd != null)
@@ -130,7 +125,6 @@ namespace Microsoft.PowerShell.Telemetry.Internal
             TelemetryWrapper.TraceMessage("PSGetCommandFailed", new { TimeInMS = timeInMS, CommandNames = name });
         }
 
-
         private static long[] s_tabCompletionTimes = new long[(int)CompletionResultType.DynamicKeyword + 1];
         private static int[] s_tabCompletionCounts = new int[(int)CompletionResultType.DynamicKeyword + 1];
         private static int[] s_tabCompletionResultCounts = new int[(int)CompletionResultType.DynamicKeyword + 1];
@@ -168,7 +162,7 @@ namespace Microsoft.PowerShell.Telemetry.Internal
             var companyName = foundModule.CompanyName;
             bool couldBeMicrosoftModule =
                 (modulePath != null &&
-                 (modulePath.StartsWith(Utils.GetApplicationBase(Utils.DefaultPowerShellShellID), StringComparison.OrdinalIgnoreCase) ||
+                 (modulePath.StartsWith(Utils.DefaultPowerShellAppBase, StringComparison.OrdinalIgnoreCase) ||
                   // The following covers both 64 and 32 bit Program Files by assuming 32bit is just ...\Program Files + " (x86)"
                   modulePath.StartsWith(Platform.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase))) ||
                 (companyName != null &&
@@ -519,3 +513,4 @@ namespace Microsoft.PowerShell.Telemetry.Internal
         int InteractiveCommandCount { get; }
     }
 }
+#endif

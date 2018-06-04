@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Concurrent;
@@ -1245,7 +1244,6 @@ namespace System.Management.Automation
         #endregion IDispose
     }
 
-
     /// <summary>
     /// Defines the exception thrown when conversion from ScriptBlock to PowerShell is forbidden
     /// (i.e. when the script block has undeclared variables or more than one statement)
@@ -1300,7 +1298,6 @@ namespace System.Management.Automation
             this.SetErrorId(errorId);
         }
 
-
         #region Serialization
         /// <summary>
         /// Initializes a new instance of ScriptBlockToPowerShellNotSupportedException with serialization parameters
@@ -1340,7 +1337,7 @@ namespace System.Management.Automation
         /// <param name="scriptThis"></param>
         /// <param name="outputPipe">The output pipe which has the results of the invocation
         /// </param>
-        /// <param name="invocationInfo">The information about  current state of the runspace.</param>
+        /// <param name="invocationInfo">The information about current state of the runspace.</param>
         /// <param name="args">The arguments to this script.</param>
         /// <exception cref="ArgumentNullException">scriptBlock is null
         /// </exception>

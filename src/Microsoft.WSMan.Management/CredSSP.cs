@@ -1,6 +1,6 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using System;
 using System.IO;
 using System.Reflection;
@@ -55,29 +55,6 @@ namespace Microsoft.WSMan.Management
             set { role = value; }
         }
         private string role;
-
-        /*/// <summary>
-        /// Role can either "Client" or "Server".
-        /// </summary>
-        [Parameter(ParameterSetName = Client, Mandatory = true, Position = 0)]
-        public SwitchParameter ClientRole
-        {
-            get { return isClient; }
-            set { isClient = value; }
-        }
-        private bool isClient;
-
-        /// <summary>
-        ///
-        /// </summary>
-        [Parameter(ParameterSetName = Server, Mandatory = true, Position = 0)]
-        public SwitchParameter ServerRole
-        {
-            get { return isServer; }
-            set { isServer = value; }
-        }
-        private bool isServer;*/
-
         #endregion
 
         #region Utilities
@@ -122,7 +99,6 @@ namespace Microsoft.WSMan.Management
     /// access a second hop
     /// </summary>
 
-
     [Cmdlet(VerbsLifecycle.Disable, "WSManCredSSP", HelpUri = "https://go.microsoft.com/fwlink/?LinkId=141438")]
     [SuppressMessage("Microsoft.Naming", "CA1704:IdentifiersShouldBeSpelledCorrectly", MessageId = "Cred")]
     [SuppressMessage("Microsoft.Naming", "CA1709:IdentifiersShouldBeCasedCorrectly", MessageId = "SSP")]
@@ -165,7 +141,6 @@ namespace Microsoft.WSMan.Management
                 }
                 m_SessionObj.Put(helper.CredSSP_RUri, inputXml, 0);
 
-#if !CORECLR
                 if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
                 {
                     this.DeleteUserDelegateSettings();
@@ -178,14 +153,6 @@ namespace Microsoft.WSMan.Management
                     thread.Start();
                     thread.Join();
                 }
-#else
-                {
-                    ThreadStart start = new ThreadStart(this.DeleteUserDelegateSettings);
-                    Thread thread = new Thread(start);
-                    thread.Start();
-                    thread.Join();
-                }
-#endif
 
                 if (!helper.ValidateCreadSSPRegistryRetry(false, null, applicationname))
                 {
@@ -493,8 +460,6 @@ namespace Microsoft.WSMan.Management
                 throw new InvalidOperationException(message);
             }
 #endif
-            //If not running elevated, then throw an "elevation required" error message.
-            WSManHelper.ThrowIfNotAdministrator();
 
             // DelegateComputer cannot be specified when Role is other than client
             if ((delegatecomputer != null) && !Role.Equals(Client, StringComparison.OrdinalIgnoreCase))
@@ -613,7 +578,6 @@ namespace Microsoft.WSMan.Management
                     //push the xml string with credssp enabled
                     xmldoc.LoadXml(m_SessionObj.Put(helper.CredSSP_RUri, newxmlcontent, 0));
 
-#if !CORECLR // No ApartmentState In CoreCLR
                     // set the Registry using GroupPolicyObject
                     if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
                     {
@@ -627,14 +591,6 @@ namespace Microsoft.WSMan.Management
                         thread.Start();
                         thread.Join();
                     }
-#else
-                    {
-                        ThreadStart start = new ThreadStart(this.UpdateCurrentUserRegistrySettings);
-                        Thread thread = new Thread(start);
-                        thread.Start();
-                        thread.Join();
-                    }
-#endif
 
                     if (helper.ValidateCreadSSPRegistryRetry(true, delegatecomputer, applicationname))
                     {
@@ -941,8 +897,6 @@ namespace Microsoft.WSMan.Management
                 throw new InvalidOperationException(message);
             }
 #endif
-            //If not running elevated, then throw an "elevation required" error message.
-            WSManHelper.ThrowIfNotAdministrator();
 
             IWSManSession m_SessionObj = null;
             try
@@ -1050,14 +1004,7 @@ namespace Microsoft.WSMan.Management
 
         #endregion IDisposable Members
 
-
-
-
-
     }
-
-
-
 
     #endregion
 }

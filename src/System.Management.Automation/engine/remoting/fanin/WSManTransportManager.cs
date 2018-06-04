@@ -1,6 +1,5 @@
-/********************************************************************++
- * Copyright (c) Microsoft Corporation.  All rights reserved.
- * --********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 /*
  * Common file that contains implementation for both server and client transport
@@ -124,7 +123,6 @@ namespace System.Management.Automation.Remoting.Client
             //For the first two special error conditions, it is remotely possible that the wsmanSessionTM is null when the failures are returned
             //as part of command TM operations (could be returned because of RC retries under the hood)
             //Not worth to handle these cases separately as there are very corner scenarios, but need to make sure wsmanSessionTM is not referenced
-
 
             // Destination server is reporting that URI redirect is required for this user.
             if ((errorStruct.errorCode == WSManNativeApi.ERROR_WSMAN_REDIRECT_REQUESTED) && (wsmanSessionTM != null))
@@ -363,7 +361,6 @@ namespace System.Management.Automation.Remoting.Client
         private bool _noMachineProfile;
 
         private int _connectionRetryCount;
-
 
         private const string resBaseName = "remotingerroridstrings";
 
@@ -821,7 +818,6 @@ namespace System.Management.Automation.Remoting.Client
         internal WSManAPIDataCommon WSManAPIData { get; private set; }
 
         internal bool SupportsDisconnect { get; private set; }
-
 
         internal override void DisconnectAsync()
         {
@@ -1530,6 +1526,15 @@ namespace System.Management.Automation.Remoting.Client
                 // config provider.
                 SetWSManSessionOption(WSManNativeApi.WSManSessionOption.WSMAN_OPTION_USE_SSL, 1);
             }
+
+#if UNIX
+            // explicitly disallow Basic auth over HTTP on Unix.
+            if (connectionInfo.AuthenticationMechanism == AuthenticationMechanism.Basic && !isSSLSpecified)
+            {
+                throw new PSRemotingTransportException(PSRemotingErrorId.ConnectFailed, RemotingErrorIdStrings.BasicAuthOverHttpNotSupported);
+            }
+#endif
+
             if (connectionInfo.NoEncryption)
             {
                 // send unencrypted messages
@@ -2597,7 +2602,25 @@ namespace System.Management.Automation.Remoting.Client
 #endif
 
                 _handle = IntPtr.Zero;
-                ErrorCode = WSManNativeApi.WSManInitialize(WSManNativeApi.WSMAN_FLAG_REQUESTED_API_VERSION_1_1, ref _handle);
+
+                try
+                {
+                    ErrorCode = WSManNativeApi.WSManInitialize(WSManNativeApi.WSMAN_FLAG_REQUESTED_API_VERSION_1_1, ref _handle);
+                }
+                catch (DllNotFoundException ex)
+                {
+                    PSEtwLog.LogOperationalError(
+                        PSEventId.TransportError,
+                        PSOpcode.Open,
+                        PSTask.None,
+                        PSKeyword.UseAlwaysOperational,
+                        "WSManAPIDataCommon.ctor",
+                        "WSManInitialize",
+                        ex.HResult.ToString(CultureInfo.InvariantCulture),
+                        ex.Message,
+                        ex.StackTrace);
+                    throw new PSRemotingTransportException(RemotingErrorIdStrings.WSManClientDllNotAvailable, ex);
+                }
 
                 // input / output streams common to all connections
                 _inputStreamSet = new WSManNativeApi.WSManStreamIDSet_ManToUn(
@@ -2607,7 +2630,6 @@ namespace System.Management.Automation.Remoting.Client
                     });
                 _outputStreamSet = new WSManNativeApi.WSManStreamIDSet_ManToUn(
                     new string[] { WSManNativeApi.WSMAN_STREAM_ID_STDOUT });
-
 
                 // startup options common to all connections
                 WSManNativeApi.WSManOption protocolStartupOption = new WSManNativeApi.WSManOption();

@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.IO;
 using System.Collections;
@@ -122,9 +121,9 @@ namespace System.Management.Automation
             ArrayList result = new ArrayList();
             string[] files = Directory.GetFiles(path);
 
-            string regexPattern = pattern.Replace(".", @"\.");
-            regexPattern = regexPattern.Replace("*", ".*");
-            regexPattern = regexPattern.Replace("?", ".?");
+            var wildcardPattern = WildcardPattern.ContainsWildcardCharacters(pattern)
+                ? WildcardPattern.Get(pattern, WildcardOptions.IgnoreCase)
+                : null;
 
             foreach (string filePath in files)
             {
@@ -133,10 +132,11 @@ namespace System.Management.Automation
                     result.Add(filePath);
                     break;
                 }
-                // If the input is pattern instead of string, we need to use Regex expression.
-                if (pattern.Contains("*") || pattern.Contains("?"))
-                {             
-                    if (Regex.IsMatch(filePath, regexPattern))
+
+                if (wildcardPattern != null)
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    if (wildcardPattern.IsMatch(fileName))
                     {
                         result.Add(filePath);
                     }
@@ -282,7 +282,7 @@ namespace System.Management.Automation
             }
 
             // step 3: locate the file in the default PowerShell installation directory.
-            string defaultPSPath = GetMshDefaultInstallationPath();
+            string defaultPSPath = Utils.GetApplicationBase(Utils.DefaultPowerShellShellID);
             if (defaultPSPath != null &&
                 !result.Contains(defaultPSPath) &&
                 Directory.Exists(defaultPSPath))
@@ -291,27 +291,6 @@ namespace System.Management.Automation
             }
 
             return result;
-        }
-
-        /// <summary>
-        /// Helper method which returns the default monad installation path based on ShellID
-        /// registry key.
-        /// </summary>
-        /// <returns>string representing path.</returns>
-        /// <remarks>
-        /// If ShellID is not defined or Path property is not defined returns null.
-        /// </remarks>
-        private static string GetMshDefaultInstallationPath()
-        {
-            string returnValue = CommandDiscovery.GetShellPathFromRegistry(Utils.DefaultPowerShellShellID);
-
-            if (returnValue != null)
-            {
-                returnValue = Path.GetDirectoryName(returnValue);
-            }
-
-            // returnValue can be null.
-            return returnValue;
         }
 
         #endregion
@@ -355,8 +334,7 @@ namespace System.Management.Automation
         /// Get the file in different search paths corresponding to current culture.
         ///
         /// The file name to search is the filename part of path parameter. (Normally path
-        /// parameter should contain only the filename part. But it is possible for
-        /// RunspaceConfiguration to directly specify a hard coded path for help file there).
+        /// parameter should contain only the filename part).
         ///
         /// </summary>
         /// <param name="file">This is the path to the file. If it has a path, we need to search under that path first</param>

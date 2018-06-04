@@ -1,14 +1,17 @@
-version: 6.0.0-beta.2-{build}
+# version is set in tools\appveyor.psm1 - Invoke-AppVeyorInstall
 
-image: Visual Studio 2015
+image: Visual Studio 2017
 
-# cache version - netcoreapp.2.0.0-preview1-002106-00
+# cache version - netcoreapp.2.1-sdk.2.1.300-rc1
 cache:
   - '%LocalAppData%\Microsoft\dotnet -> appveyor.yml'
   - '%HOMEDRIVE%%HOMEPATH%\.nuget\packages -> appveyor.yml'
 
 nuget:
   project_feed: true
+
+environment:
+  POWERSHELL_TELEMETRY_OPTOUT: 1
 
 install:
   - git submodule update --init
@@ -24,5 +27,7 @@ test_script:
 after_test:
   - ps: Invoke-AppVeyorAfterTest
 
-on_finish: 
+# Run the finish command and delete files which should not be in the cache
+on_finish:
   - ps: Invoke-AppveyorFinish
+  - ps: Invoke-AppVeyorCleanCache

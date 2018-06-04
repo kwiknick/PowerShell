@@ -1,5 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 /********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
 
 Description:
 
@@ -70,7 +71,6 @@ namespace Microsoft.PowerShell
                     return ImmediateParent;
                 }
 
-
                 // Check whether we have any fallback specified
                 // MUI_MERGE_SYSTEM_FALLBACK | MUI_MERGE_USER_FALLBACK
                 // returns fallback cultures (specified by the user)
@@ -136,7 +136,7 @@ namespace Microsoft.PowerShell
                                 }
 
                                 // There is atleast 1 duplicate in m_fallbacks which was not added to
-                                // fallbacksForTheParent array. Resize the array to take care of  this.
+                                // fallbacksForTheParent array. Resize the array to take care of this.
                                 if (_fallbacks.Length != currentIndex)
                                 {
                                     Array.Resize<string>(ref fallbacksForTheParent, currentIndex);
@@ -362,7 +362,6 @@ namespace Microsoft.PowerShell
             long numberLangs = 0;
             int bufferSize = 0;
             string returnval = "";
-
 
             if (filterOutNonConsoleCultures)
             {

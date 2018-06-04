@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -25,26 +24,18 @@ namespace System.Management.Automation
         {
             get
             {
-#if CORECLR
                 return RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
-#else
-                return false;
-#endif
             }
         }
 
         /// <summary>
-        /// True if the current platform is OS X.
+        /// True if the current platform is macOS.
         /// </summary>
-        public static bool IsOSX
+        public static bool IsMacOS
         {
             get
             {
-#if CORECLR
                 return RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
-#else
-                return false;
-#endif
             }
         }
 
@@ -55,11 +46,7 @@ namespace System.Management.Automation
         {
             get
             {
-#if CORECLR
                 return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-#else
-                return true;
-#endif
             }
         }
 
@@ -70,11 +57,7 @@ namespace System.Management.Automation
         {
             get
             {
-#if CORECLR
                 return true;
-#else
-                return false;
-#endif
             }
         }
 
@@ -85,9 +68,7 @@ namespace System.Management.Automation
         {
             get
             {
-#if !CORECLR
-                return false;
-#elif UNIX
+#if UNIX
                 return false;
 #else
                 if (_isNanoServer.HasValue) { return _isNanoServer.Value; }
@@ -117,9 +98,7 @@ namespace System.Management.Automation
         {
             get
             {
-#if !CORECLR
-                return false;
-#elif UNIX
+#if UNIX
                 return false;
 #else
                 if (_isIoT.HasValue) { return _isIoT.Value; }
@@ -142,7 +121,6 @@ namespace System.Management.Automation
             }
         }
 
-#if CORECLR
         /// <summary>
         /// True if it is the inbox powershell for NanoServer or IoT.
         /// </summary>
@@ -159,7 +137,7 @@ namespace System.Management.Automation
                 if (IsNanoServer || IsIoT)
                 {
                     _isInbox = string.Equals(
-                        Utils.GetApplicationBase(Utils.DefaultPowerShellShellID),
+                        Utils.DefaultPowerShellAppBase,
                         Utils.GetApplicationBaseFromRegistry(Utils.DefaultPowerShellShellID),
                         StringComparison.OrdinalIgnoreCase);
                 }
@@ -169,12 +147,29 @@ namespace System.Management.Automation
             }
         }
 
+        /// <summary>
+        /// True if underlying system is Windows Desktop.
+        /// </summary>
+        public static bool IsWindowsDesktop
+        {
+            get
+            {
+#if UNIX
+                return false;
+#else
+                if (_isWindowsDesktop.HasValue) { return _isWindowsDesktop.Value; }
+
+                _isWindowsDesktop = !IsNanoServer && !IsIoT;
+                return _isWindowsDesktop.Value;
+#endif
+            }
+        }
+
 #if !UNIX
         private static bool? _isNanoServer = null;
         private static bool? _isIoT = null;
         private static bool? _isInbox = null;
-#endif
-
+        private static bool? _isWindowsDesktop = null;
 #endif
 
         // format files
@@ -380,7 +375,7 @@ namespace System.Management.Automation
                             {
                                 //service accounts won't have permission to create user folder
                                 return GetTemporaryDirectory();
-                            }                                
+                            }
                         }
 
                         return Path.Combine(xdgcachehome, "powershell");
@@ -451,15 +446,15 @@ namespace System.Management.Automation
                     if (!System.IO.Directory.Exists(folderPath)) { folderPath = null; }
                     break;
                 case System.Environment.SpecialFolder.Personal:
-                    folderPath = envHome; 
+                    folderPath = envHome;
                     break;
                 case System.Environment.SpecialFolder.LocalApplicationData:
                     folderPath = System.IO.Path.Combine(envHome, ".config");
-                    if (!System.IO.Directory.Exists(folderPath)) 
+                    if (!System.IO.Directory.Exists(folderPath))
                     {
                         try
                         {
-                            System.IO.Directory.CreateDirectory(folderPath); 
+                            System.IO.Directory.CreateDirectory(folderPath);
                         }
                         catch (UnauthorizedAccessException)
                         {
@@ -550,22 +545,6 @@ namespace System.Management.Automation
             return Unix.NativeMethods.SetDate(&tm) == 0;
         }
 
-        internal static string NonWindowsGetDomainName()
-        {
-            string name = Unix.NativeMethods.GetFullyQualifiedName();
-            if (!string.IsNullOrEmpty(name))
-            {
-                // name is hostname.domainname, so extract domainname
-                int index = name.IndexOf('.');
-                if (index >= 0)
-                {
-                    return name.Substring(index + 1);
-                }
-            }
-            // if the domain name could not be found, do not throw, just return empty
-            return string.Empty;
-        }
-
         // Hostname in this context seems to be the FQDN
         internal static string NonWindowsGetHostName()
         {
@@ -587,6 +566,16 @@ namespace System.Management.Automation
             return Unix.NativeMethods.IsSameFileSystemItem(pathOne, pathTwo);
         }
 
+        internal static bool NonWindowsGetInodeData(string path, out System.ValueTuple<UInt64, UInt64> inodeData)
+        {
+            UInt64 device = 0UL;
+            UInt64 inode = 0UL;
+            var result = Unix.NativeMethods.GetInodeData(path, out device, out inode);
+
+            inodeData = (device, inode);
+            return result == 0;
+        }
+
         internal static bool NonWindowsIsExecutable(string path)
         {
             return Unix.NativeMethods.IsExecutable(path);
@@ -599,10 +588,8 @@ namespace System.Management.Automation
 
         internal static int NonWindowsGetProcessParentPid(int pid)
         {
-            return IsOSX ? Unix.NativeMethods.GetPPid(pid) : Unix.GetProcFSParentPid(pid);
+            return IsMacOS ? Unix.NativeMethods.GetPPid(pid) : Unix.GetProcFSParentPid(pid);
         }
-
-
 
         // Unix specific implementations of required functionality
         //
@@ -657,7 +644,6 @@ namespace System.Management.Automation
                 return false;
             }
 
-
             public static bool IsHardLink(FileSystemInfo fs)
             {
                 if (!fs.Exists || (fs.Attributes & FileAttributes.Directory) == FileAttributes.Directory)
@@ -706,7 +692,7 @@ namespace System.Management.Automation
             {
                 private const string psLib = "libpsl-native";
 
-                // Ansi is a misnomer, it is hardcoded to UTF-8 on Linux and OS X
+                // Ansi is a misnomer, it is hardcoded to UTF-8 on Linux and macOS
 
                 // C bools are 1 byte and so must be marshaled as I1
 
@@ -799,6 +785,10 @@ namespace System.Management.Automation
                 [return: MarshalAs(UnmanagedType.I1)]
                 internal static extern bool IsSameFileSystemItem([MarshalAs(UnmanagedType.LPStr)]string filePathOne,
                                                                  [MarshalAs(UnmanagedType.LPStr)]string filePathTwo);
+
+                [DllImport(psLib, CharSet = CharSet.Ansi, SetLastError = true)]
+                internal static extern int GetInodeData([MarshalAs(UnmanagedType.LPStr)]string path,
+                                                        out UInt64 device, out UInt64 inode);
             }
         }
     }

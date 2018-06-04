@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Generic;
@@ -90,7 +89,6 @@ namespace System.Management.Automation
         }
 
         #endregion ctor
-
 
         #region helper_methods
 
@@ -215,9 +213,7 @@ namespace System.Management.Automation
             var psCompiledScriptCmdlet = this.Command as PSScriptCmdlet;
             if (psCompiledScriptCmdlet != null)
             {
-                psCompiledScriptCmdlet.PrepareForBinding(
-                    ((ScriptParameterBinder)this.DefaultParameterBinder).LocalScope,
-                    this.CommandLineParameters);
+                psCompiledScriptCmdlet.PrepareForBinding(this.CommandLineParameters);
             }
 
             // Add the passed in arguments to the unboundArguments collection
@@ -278,23 +274,19 @@ namespace System.Management.Automation
             // second parameter changed from true to false
             ValidateParameterSets(true, false);
 
-
             // Always get the dynamic parameters as there may be mandatory parameters there
 
             // Now try binding the dynamic parameters
             HandleCommandLineDynamicParameters(out currentBindingException);
 
-
             // Try binding the default parameters again. After dynamic binding, new parameter metadata are
             // included, so it's possible a previously unsuccessful binding will succeed.
             ApplyDefaultParameterBinding("DYNAMIC BIND", true);
-
 
             // If this generated an exception (but we didn't have one from the non-dynamic
             // parameters, report on this one.
             if (reportedBindingException == null)
                 reportedBindingException = currentBindingException;
-
 
             // If the cmdlet implements a ValueFromRemainingArguments parameter (VarArgs)
             // bind the unbound arguments to that parameter.
@@ -302,7 +294,6 @@ namespace System.Management.Automation
 
             VerifyArgumentsProcessed(reportedBindingException);
         }
-
 
         /// <summary>
         /// Process all valid parameter sets, and filter out those that don't take any pipeline input
@@ -406,7 +397,6 @@ namespace System.Management.Automation
             return;
         }
 
-
         /// <summary>
         /// Bind the default parameter value pairs
         /// </summary>
@@ -452,8 +442,8 @@ namespace System.Management.Automation
 
                     CommandParameterInternal bindableArgument =
                         CommandParameterInternal.CreateParameterWithArgument(
-                           PositionUtilities.EmptyExtent, parameterName, "-" + parameterName + ":",
-                           PositionUtilities.EmptyExtent, argumentValue, false);
+                           /*parameterAst*/null, parameterName, "-" + parameterName + ":",
+                           /*argumentAst*/null, argumentValue, false);
 
                     bool bindResult =
                             BindParameter(
@@ -520,7 +510,6 @@ namespace System.Management.Automation
 
             return result;
         }
-
 
         /// <summary>
         /// Get all qualified default parameter value pairs based on the
@@ -871,7 +860,6 @@ namespace System.Management.Automation
             }
         }
 
-
         /// <summary>
         /// Verify if all arguments from the command line are bound.
         /// </summary>
@@ -1149,7 +1137,7 @@ namespace System.Management.Automation
                                 null,
                                 null,
                                 ParameterBinderStrings.ParameterAlreadyBound,
-                                "ParameterAlreadyBound");
+                                nameof(ParameterBinderStrings.ParameterAlreadyBound));
 
                         // Multiple values assigned to the same parameter.
                         // Not caused by default parameter binding
@@ -1448,7 +1436,6 @@ namespace System.Management.Automation
             return result;
         }
 
-
         /// <summary>
         /// Binds the specified argument to the specified parameter using the appropriate
         /// parameter binder.
@@ -1592,7 +1579,6 @@ namespace System.Management.Automation
             return result;
         }
 
-
         /// <summary>
         /// Binds the remaining arguments to an unbound ValueFromRemainingArguments parameter (Varargs)
         /// </summary>
@@ -1680,39 +1666,35 @@ namespace System.Management.Automation
 
                         // If there are multiple arguments, it's not clear how best to represent the extent as the extent
                         // may be disjoint, as in 'echo a -verbose b', we have 'a' and 'b' in UnboundArguments.
-                        IScriptExtent argumentExtent = UnboundArguments.Count == 1
-                                                           ? UnboundArguments[0].ArgumentExtent
-                                                           : PositionUtilities.EmptyExtent;
+                        var argumentAst = UnboundArguments.Count == 1 ? UnboundArguments[0].ArgumentAst : null;
                         var cpi = CommandParameterInternal.CreateParameterWithArgument(
-                            PositionUtilities.EmptyExtent, varargsParameter.Parameter.Name, "-" + varargsParameter.Parameter.Name + ":",
-                            argumentExtent, valueFromRemainingArguments, false);
+                            /*parameterAst*/null, varargsParameter.Parameter.Name, "-" + varargsParameter.Parameter.Name + ":",
+                            argumentAst, valueFromRemainingArguments, false);
+
+                        // To make all of the following work similarly (the first is handled elsewhere, but second and third are
+                        // handled here):
+                        //     Set-ClusterOwnerNode -Owners foo,bar
+                        //     Set-ClusterOwnerNode foo bar
+                        //     Set-ClusterOwnerNode foo,bar
+                        // we unwrap our List, but only if there is a single argument which is a collection.
+                        if (valueFromRemainingArguments.Count == 1 && LanguagePrimitives.IsObjectEnumerable(valueFromRemainingArguments[0]))
+                        {
+                            cpi.SetArgumentValue(UnboundArguments[0].ArgumentAst, valueFromRemainingArguments[0]);
+                        }
+
                         try
                         {
                             BindParameter(cpi, varargsParameter, ParameterBindingFlags.ShouldCoerceType);
                         }
                         catch (ParameterBindingException pbex)
                         {
-                            // To make all of the following work similarly (the first is handled elsewhere, but second and third are
-                            // handled here):
-                            //     Set-ClusterOwnerNode -Owners foo,bar
-                            //     Set-ClusterOwnerNode foo bar
-                            //     Set-ClusterOwnerNode foo,bar
-                            // we make one additional attempt at converting, but only if there is a single argument of type object[].
-                            if (valueFromRemainingArguments.Count == 1 && valueFromRemainingArguments[0] is object[])
+                            if (!DefaultParameterBindingInUse)
                             {
-                                cpi.SetArgumentValue(UnboundArguments[0].ArgumentExtent, valueFromRemainingArguments[0]);
-                                BindParameter(cpi, varargsParameter, ParameterBindingFlags.ShouldCoerceType);
+                                throw;
                             }
                             else
                             {
-                                if (!DefaultParameterBindingInUse)
-                                {
-                                    throw;
-                                }
-                                else
-                                {
-                                    ThrowElaboratedBindingException(pbex);
-                                }
+                                ThrowElaboratedBindingException(pbex);
                             }
                         }
                         UnboundArguments.Clear();
@@ -1720,7 +1702,6 @@ namespace System.Management.Automation
                 }
             }
         } // HandleRemainingArguments
-
 
         /// <summary>
         /// Determines if the cmdlet supports dynamic parameters. If it does,
@@ -1758,14 +1739,6 @@ namespace System.Management.Automation
                         if (_dynamicParameterBinder == null)
                         {
                             s_tracer.WriteLine("Getting the bindable object from the Cmdlet");
-
-                            var psCompiledScriptCmdlet = this.Command as PSScriptCmdlet;
-                            if (psCompiledScriptCmdlet != null)
-                            {
-                                psCompiledScriptCmdlet.PrepareForBinding(
-                                    ((ScriptParameterBinder)this.DefaultParameterBinder).LocalScope,
-                                    this.CommandLineParameters);
-                            }
 
                             // Now get the dynamic parameter bindable object.
                             object dynamicParamBindableObject;
@@ -2133,7 +2106,6 @@ namespace System.Management.Automation
                                 latchOnToDefault = true;
                             }
                         }
-
 
                         if (!latchOnToDefault)
                         {
@@ -2863,7 +2835,6 @@ namespace System.Management.Automation
                     ParameterBinderStrings.AmbiguousParameterSet,
                     "AmbiguousParameterSet");
 
-
             // Trace the parameter sets still active
             uint currentParameterSet = 1;
 
@@ -3030,9 +3001,7 @@ namespace System.Management.Automation
 
                     // Create a collection to store the prompt descriptions of unbound mandatory parameters
 
-
                     Collection<FieldDescription> fieldDescriptionList = CreatePromptDataStructures(missingMandatoryParameters);
-
 
                     Dictionary<String, PSObject> parameters =
                         PromptForMissingMandatoryParameters(
@@ -3048,8 +3017,8 @@ namespace System.Management.Automation
                         {
                             var argument =
                                 CommandParameterInternal.CreateParameterWithArgument(
-                                PositionUtilities.EmptyExtent, entry.Key, "-" + entry.Key + ":",
-                                PositionUtilities.EmptyExtent, entry.Value,
+                                /*parameterAst*/null, entry.Key, "-" + entry.Key + ":",
+                                /*argumentAst*/null, entry.Value,
                                 false);
 
                             // Ignore the result since any failure should cause an exception
@@ -3285,7 +3254,6 @@ namespace System.Management.Automation
             }
             return label.ToString();
         }
-
 
         /// <summary>
         /// Gets the parameter set name for the current parameter set.
@@ -3844,7 +3812,6 @@ namespace System.Management.Automation
             // different parameters depending on the type of the incoming pipeline
             // object.
 
-
             // Loop through each of the delay bind script blocks and invoke them.
             // Bind the result to the associated parameter
 
@@ -3929,11 +3896,10 @@ namespace System.Management.Automation
                     newValue = output[0];
                 }
 
-
                 // Create a new CommandParameterInternal for the output of the script block.
                 var newArgument = CommandParameterInternal.CreateParameterWithArgument(
-                    argument.ParameterExtent, argument.ParameterName, "-" + argument.ParameterName + ":",
-                    argument.ArgumentExtent, newValue,
+                    argument.ParameterAst, argument.ParameterName, "-" + argument.ParameterName + ":",
+                    argument.ArgumentAst, newValue,
                     false);
 
                 if (!BindParameter(newArgument, parameter, ParameterBindingFlags.ShouldCoerceType))
@@ -3977,9 +3943,7 @@ namespace System.Management.Automation
             return result;
         }
 
-
         #endregion helper_methods
-
 
         #region private_members
 
@@ -4296,8 +4260,8 @@ namespace System.Management.Automation
 
                 // Now bind the new value
                 CommandParameterInternal param = CommandParameterInternal.CreateParameterWithArgument(
-                    PositionUtilities.EmptyExtent, parameter.Parameter.Name, "-" + parameter.Parameter.Name + ":",
-                    PositionUtilities.EmptyExtent, parameterValue,
+                    /*parameterAst*/null, parameter.Parameter.Name, "-" + parameter.Parameter.Name + ":",
+                    /*argumentAst*/null, parameterValue,
                     false);
 
                 flags = flags & ~ParameterBindingFlags.DelayBindScriptBlock;
@@ -4318,8 +4282,8 @@ namespace System.Management.Automation
         {
             _defaultParameterValues.Add(name,
                 CommandParameterInternal.CreateParameterWithArgument(
-                    PositionUtilities.EmptyExtent, name, "-" + name + ":",
-                    PositionUtilities.EmptyExtent, value,
+                    /*parameterAst*/null, name, "-" + name + ":",
+                    /*argumentAst*/null, value,
                     false));
         }
 
@@ -4343,8 +4307,8 @@ namespace System.Management.Automation
                 _defaultParameterValues.Add(
                     parameter.Parameter.Name,
                     CommandParameterInternal.CreateParameterWithArgument(
-                        PositionUtilities.EmptyExtent, parameter.Parameter.Name, "-" + parameter.Parameter.Name + ":",
-                        PositionUtilities.EmptyExtent, defaultParameterValue,
+                        /*parameterAst*/null, parameter.Parameter.Name, "-" + parameter.Parameter.Name + ":",
+                        /*argumentAst*/null, defaultParameterValue,
                         false));
             }
         }
@@ -4831,5 +4795,4 @@ namespace System.Management.Automation
         #endregion KeyValidation
     }
 }
-
 

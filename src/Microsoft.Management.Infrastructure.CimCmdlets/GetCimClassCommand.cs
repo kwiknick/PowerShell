@@ -1,7 +1,5 @@
-/*============================================================================
- * Copyright (C) Microsoft Corporation, All rights reserved.
- *============================================================================
- */
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 #region Using directives
 
@@ -21,7 +19,7 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
     /// classes in the given namespace.
     /// </para>
     /// <para>
-    /// NOTES: The class instance contains the  Namespace properties
+    /// NOTES: The class instance contains the Namespace properties
     /// Should the class remember what Session it came from? No.
     /// </para>
     /// </summary>

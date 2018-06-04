@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
@@ -56,7 +55,6 @@ namespace System.Management.Automation
             _methods.Add(index);
         }
 
-
         /// <summary>
         /// Returns the different method overloads signatures.
         /// </summary>
@@ -65,13 +63,12 @@ namespace System.Management.Automation
         {
             Collection<String> result = new Collection<string>();
 
-
             foreach (int index in _methods)
             {
                 IntPtr pFuncDesc;
 
                 _typeInfo.GetFuncDesc(index, out pFuncDesc);
-                COM.FUNCDESC funcdesc = ClrFacade.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
+                COM.FUNCDESC funcdesc = Marshal.PtrToStructure<COM.FUNCDESC>(pFuncDesc);
 
                 string signature = ComUtil.GetMethodSignatureFromFuncDesc(_typeInfo, funcdesc, false);
                 result.Add(signature);

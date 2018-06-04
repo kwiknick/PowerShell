@@ -1,15 +1,17 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using System.Globalization;
 using System.Management.Automation.Internal;
 using System.Diagnostics.CodeAnalysis;
 using System.Management.Automation.Language;
 using System.Runtime.CompilerServices;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace System.Management.Automation.Internal
 {
@@ -481,7 +483,6 @@ namespace System.Management.Automation
             Type = new[] { new PSTypeName(typeName) };
         }
 
-
         /// <summary>
         /// Construct the attribute from an array of <see>System.Type</see>
         /// </summary>
@@ -557,6 +558,10 @@ namespace System.Management.Automation
     [AttributeUsage(AttributeTargets.Assembly)]
     public class DynamicClassImplementationAssemblyAttribute : Attribute
     {
+        /// <summary>
+        /// The (possibly null) path to the file defining this class.
+        /// </summary>
+        public string ScriptFile { get; set; }
     }
 
     #endregion Misc Attributes
@@ -683,7 +688,7 @@ namespace System.Management.Automation
             {
                 if (string.IsNullOrEmpty(value))
                 {
-                    throw PSTraceSource.NewArgumentException("value");
+                    throw PSTraceSource.NewArgumentException("HelpMessage");
                 }
                 _helpMessage = value;
             }
@@ -704,7 +709,7 @@ namespace System.Management.Automation
             {
                 if (string.IsNullOrEmpty(value))
                 {
-                    throw PSTraceSource.NewArgumentException("value");
+                    throw PSTraceSource.NewArgumentException("HelpMessageBaseName");
                 }
                 _helpMessageBaseName = value;
             }
@@ -725,7 +730,7 @@ namespace System.Management.Automation
             {
                 if (string.IsNullOrEmpty(value))
                 {
-                    throw PSTraceSource.NewArgumentException("value");
+                    throw PSTraceSource.NewArgumentException("HelpMessageResourceId");
                 }
                 _helpMessageResourceId = value;
             }
@@ -803,7 +808,6 @@ namespace System.Management.Automation
         public string Help { get; set; }
     }
 
-
     /// <summary>
     /// Specify that the member is hidden for the purposes of cmdlets like Get-Member and
     /// that the member is not displayed by default by Format-* cmdlets.
@@ -868,7 +872,6 @@ namespace System.Management.Automation
             }
         }
 
-
         /// <summary>
         /// Initializes a new instance of the ValidateLengthAttribute class
         /// </summary>
@@ -896,6 +899,31 @@ namespace System.Management.Automation
         }
     }
 
+    /// <Summary>
+    /// Predefined range kind to use with ValidateRangeAttribute.
+    /// </Summary>
+    public enum ValidateRangeKind
+    {
+        /// <Summary>
+        /// Range is greater than 0.
+        /// </Summary>
+        Positive,
+
+        /// <Summary>
+        /// Range is greater than or equal to 0.
+        /// </Summary>
+        NonNegative,
+
+        /// <Summary>
+        /// Range is less than 0.
+        /// </Summary>
+        Negative,
+
+        /// <Summary>
+        /// Range is less than or equal to 0.
+        /// </Summary>
+        NonPositive
+    }
     /// <summary>
     /// Validates that each parameter argument falls in the range
     /// specified by MinRange and MaxRange
@@ -923,6 +951,8 @@ namespace System.Management.Automation
         /// </summary>
         private Type _promotedType;
 
+        ValidateRangeKind? _rangeKind;
+
         /// <summary>
         /// Validates that each parameter argument falls in the range
         /// specified by MinRange and MaxRange
@@ -949,36 +979,13 @@ namespace System.Management.Automation
                 element = o.BaseObject;
             }
 
-            // minRange and maxRange have the same type, so we just need
-            // to compare to one of them
-            if (element.GetType() != _promotedType)
+            if (_rangeKind.HasValue)
             {
-                object resultValue;
-                if (LanguagePrimitives.TryConvertTo(element, _promotedType, out resultValue))
-                {
-                    element = resultValue;
-                }
-                else
-                {
-                    throw new ValidationMetadataException("ValidationRangeElementType",
-                        null, Metadata.ValidateRangeElementType,
-                        element.GetType().Name, MinRange.GetType().Name);
-                }
+                ValidateRange(element, (ValidateRangeKind)_rangeKind);
             }
-
-            // They are the same type and are all IComparable, so this should not throw
-            if (_minComparable.CompareTo(element) > 0)
+            else
             {
-                throw new ValidationMetadataException("ValidateRangeTooSmall",
-                    null, Metadata.ValidateRangeSmallerThanMinRangeFailure,
-                    element.ToString(), MinRange.ToString());
-            }
-
-            if (_maxComparable.CompareTo(element) < 0)
-            {
-                throw new ValidationMetadataException("ValidateRangeTooBig",
-                    null, Metadata.ValidateRangeGreaterThanMaxRangeFailure,
-                    element.ToString(), MaxRange.ToString());
+                ValidateRange(element);
             }
         }
 
@@ -1055,6 +1062,139 @@ namespace System.Management.Automation
             MaxRange = maxRange;
         }
 
+        /// <summary>
+        /// Initializes a new instance of the ValidateRangeAttribute class
+        /// this constructor uses a predefined ranged
+        /// </summary>
+        public ValidateRangeAttribute(ValidateRangeKind kind) : base()
+        {
+            _rangeKind = kind;
+        }
+
+        private void ValidateRange(object element, ValidateRangeKind rangeKind)
+        {
+            Type commonType = GetCommonType(typeof(int),element.GetType());
+            if (commonType == null)
+            {
+                    throw new ValidationMetadataException(
+                    "ValidationRangeElementType",
+                    null,
+                    Metadata.ValidateRangeElementType,
+                    element.GetType().Name,
+                    typeof(int).Name);
+            }
+
+            object resultValue;
+            IComparable dynamicZero = 0;
+
+            if (LanguagePrimitives.TryConvertTo(element, commonType, out resultValue))
+            {
+                element = resultValue;
+
+                if (LanguagePrimitives.TryConvertTo(0, commonType, out resultValue))
+                {
+                    dynamicZero = (IComparable)resultValue;
+                }
+            }
+            else
+            {
+                throw new ValidationMetadataException(
+                    "ValidationRangeElementType",
+                    null,
+                    Metadata.ValidateRangeElementType,
+                    element.GetType().Name,
+                    commonType.Name);
+            }
+
+            switch (rangeKind)
+            {
+                case ValidateRangeKind.Positive:
+                    if (dynamicZero.CompareTo(element) >= 0)
+                    {
+                        throw new ValidationMetadataException(
+                            "ValidateRangePositiveFailure",
+                            null,
+                            Metadata.ValidateRangePositiveFailure,
+                            element.ToString());
+                    }
+                    break;
+                case ValidateRangeKind.NonNegative:
+                    if (dynamicZero.CompareTo(element) > 0)
+                    {
+                        throw new ValidationMetadataException(
+                            "ValidateRangeNonNegativeFailure",
+                            null,
+                            Metadata.ValidateRangeNonNegativeFailure,
+                            element.ToString());
+                    }
+                    break;
+                case ValidateRangeKind.Negative:
+                    if (dynamicZero.CompareTo(element) <= 0)
+                    {
+                        throw new ValidationMetadataException(
+                            "ValidateRangeNegativeFailure",
+                            null,
+                            Metadata.ValidateRangeNegativeFailure,
+                            element.ToString());
+                    }
+                    break;
+                case ValidateRangeKind.NonPositive:
+                    if (dynamicZero.CompareTo(element) < 0)
+                    {
+                        throw new ValidationMetadataException(
+                            "ValidateRangeNonPositiveFailure",
+                            null,
+                            Metadata.ValidateRangeNonPositiveFailure,
+                            element.ToString());
+                    }
+                    break;
+                }
+        }
+
+        private void ValidateRange(object element)
+        {
+            // MinRange and maxRange have the same type, so we just need
+            // to compare to one of them.
+            if (element.GetType() != _promotedType)
+            {
+                object resultValue;
+                if (LanguagePrimitives.TryConvertTo(element, _promotedType, out resultValue))
+                {
+                    element = resultValue;
+                }
+                else
+                {
+                    throw new ValidationMetadataException(
+                        "ValidationRangeElementType",
+                        null,
+                        Metadata.ValidateRangeElementType,
+                        element.GetType().Name,
+                        MinRange.GetType().Name);
+                }
+            }
+
+            // They are the same type and are all IComparable, so this should not throw
+            if (_minComparable.CompareTo(element) > 0)
+            {
+                throw new ValidationMetadataException(
+                    "ValidateRangeTooSmall",
+                    null,
+                    Metadata.ValidateRangeSmallerThanMinRangeFailure,
+                    element.ToString(),
+                    MinRange.ToString());
+            }
+
+            if (_maxComparable.CompareTo(element) < 0)
+            {
+                throw new ValidationMetadataException(
+                    "ValidateRangeTooBig",
+                    null,
+                    Metadata.ValidateRangeGreaterThanMaxRangeFailure,
+                    element.ToString(),
+                    MaxRange.ToString());
+            }
+        }
+
         private static Type GetCommonType(Type minType, Type maxType)
         {
             Type resultType = null;
@@ -1115,7 +1255,7 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Gets or sets the custom error message pattern that is displayed to the user.
-        /// 
+        ///
         /// The text representation of the object being validated and the validating regex is passed as
         /// the first and second formatting parameters to the ErrorMessage formatting pattern.
         /// <example>
@@ -1177,10 +1317,10 @@ namespace System.Management.Automation
     {
         /// <summary>
         /// Gets or sets the custom error message that is displayed to the user.
-        /// 
+        ///
         /// The item being validated and the validating scriptblock is passed as the first and second
         /// formatting argument.
-        /// 
+        ///
         /// <example>
         /// [ValidateScript("$_ % 2", ErrorMessage = "The item '{0}' did not pass validation of script '{1}'")]
         /// </example>
@@ -1276,7 +1416,6 @@ namespace System.Management.Automation
             IEnumerable ie;
             IEnumerator ienumerator;
 
-
             if (arguments == null || arguments == AutomationNull.Value)
             {
                 // treat a nul list the same as an empty list
@@ -1354,19 +1493,81 @@ namespace System.Management.Automation
     }
 
     /// <summary>
+    /// Optional base class for <see cref="IValidateSetValuesGenerator"/> implementations that want a default implementation to cache valid values.
+    /// </summary>
+    public abstract class CachedValidValuesGeneratorBase : IValidateSetValuesGenerator
+    {
+        // Cached valid values.
+        private string[] _validValues;
+        private int _validValuesCacheExpiration;
+
+        /// <summary>
+        /// Initializes a new instance of the CachedValidValuesGeneratorBase class.
+        /// </summary>
+        /// <param name="cacheExpirationInSeconds">Sets a time interval in seconds to reset the '_validValues' dynamic valid values cache.</param>
+        protected CachedValidValuesGeneratorBase(int cacheExpirationInSeconds)
+        {
+            _validValuesCacheExpiration = cacheExpirationInSeconds;
+        }
+
+        /// <summary>
+        /// Abstract method to generate a valid values.
+        /// </summary>
+        public abstract string[] GenerateValidValues();
+
+        /// <summary>
+        /// Get a valid values.
+        /// </summary>
+        public string[] GetValidValues()
+        {
+            // Because we have a background task to clear the cache by '_validValues = null'
+            // we use the local variable to exclude a race condition.
+            var validValuesLocal = _validValues;
+            if (validValuesLocal != null)
+            {
+                return validValuesLocal;
+            }
+
+            var validValuesNoCache = GenerateValidValues();
+
+            if (validValuesNoCache == null)
+            {
+                throw new ValidationMetadataException(
+                    "ValidateSetGeneratedValidValuesListIsNull",
+                    null,
+                    Metadata.ValidateSetGeneratedValidValuesListIsNull);
+            }
+
+            if (_validValuesCacheExpiration > 0)
+            {
+                _validValues = validValuesNoCache;
+                Task.Delay(_validValuesCacheExpiration * 1000).ContinueWith((task) => _validValues = null);
+            }
+
+            return validValuesNoCache;
+        }
+    }
+
+    /// <summary>
     /// Validates that each parameter argument is present in a specified set
     /// </summary>
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
     public sealed class ValidateSetAttribute : ValidateEnumeratedArgumentsAttribute
     {
+        // We can use either static '_validValues'
+        // or dynamic valid values list generated by instance of 'validValuesGenerator'.
         private string[] _validValues;
+        private IValidateSetValuesGenerator validValuesGenerator = null;
+
+        // The valid values generator cache works across 'ValidateSetAttribute' instances.
+        private static ConcurrentDictionary<Type, IValidateSetValuesGenerator> s_ValidValuesGeneratorCache = new ConcurrentDictionary<Type, IValidateSetValuesGenerator>();
 
         /// <summary>
         /// Gets or sets the custom error message that is displayed to the user
-        /// 
+        ///
         /// The item being validated and a text representation of the validation set
         /// is passed as the first and second formatting argument to the ErrorMessage formatting pattern.
-        /// 
+        ///
         /// <example>
         /// [ValidateSet("A","B","C", ErrorMessage="The item '{0}' is not part of the set '{1}'.")
         /// </example>
@@ -1380,13 +1581,28 @@ namespace System.Management.Automation
         public bool IgnoreCase { get; set; } = true;
 
         /// <summary>
-        /// Gets the values in the set
+        /// Gets the valid values in the set.
         /// </summary>
         public IList<string> ValidValues
         {
             get
             {
-                return _validValues;
+                if (validValuesGenerator == null)
+                {
+                    return _validValues;
+                }
+
+                var validValuesLocal = validValuesGenerator.GetValidValues();
+
+                if (validValuesLocal == null)
+                {
+                    throw new ValidationMetadataException(
+                        "ValidateSetGeneratedValidValuesListIsNull",
+                        null,
+                        Metadata.ValidateSetGeneratedValidValuesListIsNull);
+                }
+
+                return validValuesLocal;
             }
         }
 
@@ -1409,16 +1625,13 @@ namespace System.Management.Automation
             }
 
             string objString = element.ToString();
-            for (int setIndex = 0; setIndex < _validValues.Length; setIndex++)
+            foreach (string setString in ValidValues)
             {
-                string setString = _validValues[setIndex];
-
                 if (CultureInfo.InvariantCulture.
                         CompareInfo.Compare(setString, objString,
                                             IgnoreCase
                                                 ? CompareOptions.IgnoreCase
                                                 : CompareOptions.None) == 0)
-
                 {
                     return;
                 }
@@ -1432,7 +1645,7 @@ namespace System.Management.Automation
 
         private string SetAsString()
         {
-            return string.Join(CultureInfo.CurrentUICulture.TextInfo.ListSeparator, _validValues);
+            return string.Join(CultureInfo.CurrentUICulture.TextInfo.ListSeparator, ValidValues);
         }
 
         /// <summary>
@@ -1455,6 +1668,37 @@ namespace System.Management.Automation
 
             _validValues = validValues;
         }
+
+        /// <summary>
+        /// Initializes a new instance of the ValidateSetAttribute class.
+        /// Valid values is returned dynamically from a custom class implementing 'IValidateSetValuesGenerator' interface.
+        /// </summary>
+        /// <param name="valuesGeneratorType">class that implements the 'IValidateSetValuesGenerator' interface</param>
+        /// <exception cref="ArgumentException">for null arguments</exception>
+        public ValidateSetAttribute(Type valuesGeneratorType)
+        {
+            // We check 'IsNotPublic' because we don't want allow 'Activator.CreateInstance' create an instance of non-public type.
+            if (!typeof(IValidateSetValuesGenerator).IsAssignableFrom(valuesGeneratorType) || valuesGeneratorType.IsNotPublic)
+            {
+                throw PSTraceSource.NewArgumentException("valuesGeneratorType");
+            }
+
+            // Add a valid values generator to the cache.
+            // We don't cache valid values.
+            // We expect that valid values can be cached in the valid values generator.
+            validValuesGenerator = s_ValidValuesGeneratorCache.GetOrAdd(valuesGeneratorType, (key) => (IValidateSetValuesGenerator)Activator.CreateInstance(key));
+        }
+    }
+
+    /// <summary>
+    /// Allows dynamically generate set of values for ValidateSetAttribute.
+    /// </summary>
+    public interface IValidateSetValuesGenerator
+    {
+        /// <summary>
+        /// Get a valid values.
+        /// </summary>
+        string[] GetValidValues();
     }
 
     #region Allow
@@ -1616,11 +1860,40 @@ namespace System.Management.Automation
     #endregion
 
     #region NULL validation attributes
+
+    /// <summary>
+    /// Base type of Null Validation attributes.
+    /// </summary>
+    public abstract class NullValidationAttributeBase : ValidateArgumentsAttribute
+    {
+        /// <summary>
+        /// Check if the argument type is a collection.
+        /// </summary>
+        protected bool IsArgumentCollection(Type argumentType, out bool isElementValueType)
+        {
+            isElementValueType = false;
+            var information = new ParameterCollectionTypeInformation(argumentType);
+            switch (information.ParameterCollectionType)
+            {
+                // If 'arguments' is an array, or implement 'IList', or implement 'ICollection<>'
+                // then we continue to check each element of the collection.
+                case ParameterCollectionType.Array:
+                case ParameterCollectionType.IList:
+                case ParameterCollectionType.ICollectionGeneric:
+                    Type elementType = information.ElementType;
+                    isElementValueType = elementType != null && elementType.IsValueType;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
     /// <summary>
     /// Validates that the parameters's argument is not null
     /// </summary>
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-    public sealed class ValidateNotNullAttribute : ValidateArgumentsAttribute
+    public sealed class ValidateNotNullAttribute : NullValidationAttributeBase
     {
         /// <summary>
         /// Verifies the argument is not null and if it is a collection, that each
@@ -1642,9 +1915,6 @@ namespace System.Management.Automation
         /// </exception>
         protected override void Validate(object arguments, EngineIntrinsics engineIntrinsics)
         {
-            IEnumerable ienum = null;
-            IEnumerator itor = null;
-
             if (arguments == null || arguments == AutomationNull.Value)
             {
                 throw new ValidationMetadataException(
@@ -1652,24 +1922,17 @@ namespace System.Management.Automation
                     null,
                     Metadata.ValidateNotNullFailure);
             }
-            else if ((ienum = arguments as IEnumerable) != null)
+            else if (IsArgumentCollection(arguments.GetType(), out bool isElementValueType))
             {
-                foreach (object element in ienum)
+                // If the element of the collection is of value type, then no need to check for null
+                // because a value-type value cannot be null.
+                if (isElementValueType) { return; }
+
+                IEnumerator ienum = LanguagePrimitives.GetEnumerator(arguments);
+                while (ienum.MoveNext())
                 {
+                    object element = ienum.Current;
                     if (element == null || element == AutomationNull.Value)
-                    {
-                        throw new ValidationMetadataException(
-                            "ArgumentIsNull",
-                            null,
-                            Metadata.ValidateNotNullCollectionFailure);
-                    }
-                }
-            }
-            else if ((itor = arguments as IEnumerator) != null)
-            {
-                for (; itor.MoveNext() == true;)
-                {
-                    if (itor.Current == null || itor.Current == AutomationNull.Value)
                     {
                         throw new ValidationMetadataException(
                             "ArgumentIsNull",
@@ -1686,7 +1949,7 @@ namespace System.Management.Automation
     /// an empty string, and is not an empty collection.
     /// </summary>
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-    public sealed class ValidateNotNullOrEmptyAttribute : ValidateArgumentsAttribute
+    public sealed class ValidateNotNullOrEmptyAttribute : NullValidationAttributeBase
     {
         /// <summary>
         /// Validates that the parameters's argument is not null, is not
@@ -1705,10 +1968,6 @@ namespace System.Management.Automation
         /// </exception>
         protected override void Validate(object arguments, EngineIntrinsics engineIntrinsics)
         {
-            IEnumerable ienum = null;
-            IEnumerator itor = null;
-            string str = null;
-
             if (arguments == null || arguments == AutomationNull.Value)
             {
                 throw new ValidationMetadataException(
@@ -1716,7 +1975,7 @@ namespace System.Management.Automation
                     null,
                     Metadata.ValidateNotNullOrEmptyFailure);
             }
-            else if ((str = arguments as String) != null)
+            else if (arguments is string str)
             {
                 if (String.IsNullOrEmpty(str))
                 {
@@ -1726,34 +1985,40 @@ namespace System.Management.Automation
                         Metadata.ValidateNotNullOrEmptyFailure);
                 }
             }
-            else if ((ienum = arguments as IEnumerable) != null)
+            else if (IsArgumentCollection(arguments.GetType(), out bool isElementValueType))
             {
-                int validElements = 0;
-                foreach (object element in ienum)
-                {
-                    validElements++;
-                    if (element == null || element == AutomationNull.Value)
-                    {
-                        throw new ValidationMetadataException(
-                            "ArgumentIsNull",
-                            null,
-                            Metadata.ValidateNotNullOrEmptyCollectionFailure);
-                    }
+                bool isEmpty = true;
+                IEnumerator ienum = LanguagePrimitives.GetEnumerator(arguments);
+                if (ienum.MoveNext()) { isEmpty = false; }
 
-                    string elementAsString = element as String;
-                    if (elementAsString != null)
-                    {
-                        if (String.IsNullOrEmpty(elementAsString))
+                // If the element of the collection is of value type, then no need to check for null
+                // because a value-type value cannot be null.
+                if (!isEmpty && !isElementValueType)
+                {
+                    do {
+                        object element = ienum.Current;
+                        if (element == null || element == AutomationNull.Value)
                         {
                             throw new ValidationMetadataException(
-                                "ArgumentCollectionContainsEmpty",
+                                "ArgumentIsNull",
                                 null,
-                                Metadata.ValidateNotNullOrEmptyFailure);
+                                Metadata.ValidateNotNullOrEmptyCollectionFailure);
                         }
-                    }
+
+                        if (element is string elementAsString)
+                        {
+                            if (String.IsNullOrEmpty(elementAsString))
+                            {
+                                throw new ValidationMetadataException(
+                                    "ArgumentCollectionContainsEmpty",
+                                    null,
+                                    Metadata.ValidateNotNullOrEmptyCollectionFailure);
+                            }
+                        }
+                    } while (ienum.MoveNext());
                 }
 
-                if (validElements == 0)
+                if (isEmpty)
                 {
                     throw new ValidationMetadataException(
                         "ArgumentIsEmpty",
@@ -1761,21 +2026,9 @@ namespace System.Management.Automation
                         Metadata.ValidateNotNullOrEmptyCollectionFailure);
                 }
             }
-            else if ((itor = arguments as IEnumerator) != null)
+            else if (arguments is IDictionary dict)
             {
-                int validElements = 0;
-                for (; itor.MoveNext() == true;)
-                {
-                    validElements++;
-                    if (itor.Current == null || itor.Current == AutomationNull.Value)
-                    {
-                        throw new ValidationMetadataException(
-                            "ArgumentIsNull",
-                            null,
-                            Metadata.ValidateNotNullOrEmptyCollectionFailure);
-                    }
-                }
-                if (validElements == 0)
+                if (dict.Count == 0)
                 {
                     throw new ValidationMetadataException(
                         "ArgumentIsEmpty",

@@ -1,4 +1,4 @@
-﻿#
+#
 # Module manifest for module 'Microsoft.PowerShell.ODataUtils'
 #
 # Generated on: 8/15/2013
@@ -16,13 +16,13 @@ ModuleVersion = '1.0'
 GUID = 'fa1606d1-94cb-4264-bfb6-def714420084'
 
 # Author of this module
-Author = 'Microsoft Corporation'
+Author = 'PowerShell'
 
 # Company or vendor of this module
 CompanyName = 'Microsoft Corporation'
 
 # Copyright statement for this module
-Copyright = '(c) 2014 Microsoft. All rights reserved.'
+Copyright = 'Copyright (c) Microsoft Corporation. All rights reserved.'
 
 # Description of the functionality provided by this module
 # Description = ''

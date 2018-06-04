@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Globalization;
 using System.Management.Automation.Remoting;
@@ -144,7 +143,7 @@ namespace System.Management.Automation.Internal.Host
                     {
                         throw PSTraceSource.NewNotImplementedException();
                     }
-#pragma warning restore  56503
+#pragma warning restore 56503
                 }
                 return _idResult;
             }
@@ -592,7 +591,6 @@ namespace System.Management.Automation.Internal.Host
         {
             get { return _externalHostRef.IsOverridden; }
         }
-
 
         internal ExecutionContext Context { get; }
 

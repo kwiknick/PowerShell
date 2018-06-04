@@ -1,8 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
-
-
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Globalization;
@@ -16,8 +13,6 @@ using System.Management.Automation.Host;
 using System.Security;
 using Dbg = System.Management.Automation.Diagnostics;
 using InternalHostUserInterface = System.Management.Automation.Internal.Host.InternalHostUserInterface;
-
-
 
 namespace Microsoft.PowerShell
 {
@@ -44,8 +39,6 @@ namespace Microsoft.PowerShell
             Overflow
         }
 
-
-
         private static
         bool
         AtLeastOneHelpMessageIsPresent(Collection<FieldDescription> descriptions)
@@ -63,8 +56,6 @@ namespace Microsoft.PowerShell
 
             return false;
         }
-
-
 
         /// <summary>
         ///
@@ -315,31 +306,12 @@ namespace Microsoft.PowerShell
             {
                 WriteLineToConsole(WrapToCurrentWindowWidth(fieldPrompt));
                 PSCredential credential = null;
-                // the earlier implementation contained null
-                // for caption and message in the call below
-                // Passing null is a potential security risk
-                // as any modifications made with security in
-                // mind is lost. This can lead to a malicious
-                // server prompting the user for a request
-                // which can appear to come from locally.
-                if (!PromptUsingConsole() && desc.ModifiedByRemotingProtocol)
-                {
-                    credential =
-                        PromptForCredential(
-                            caption,
-                            message,
-                            null,
-                            string.Empty);
-                }
-                else
-                {
-                    credential =
-                        PromptForCredential(
-                            null,   // caption already written
-                            null,   // message already written
-                            null,
-                            string.Empty);
-                }
+                credential =
+                    PromptForCredential(
+                        null,   // caption already written
+                        null,   // message already written
+                        null,
+                        string.Empty);
                 convertedObj = credential;
                 cancelInput = (convertedObj == null);
                 if ((credential != null) && (credential.Password.Length == 0) && listInput)
@@ -493,7 +465,7 @@ namespace Microsoft.PowerShell
         /// If input does not start with PromptCommandPrefix (= "!"), returns input
         /// Tilde commands -
         /// !   end of list, only valid for input field types that implement IList, returns string.Empty
-        /// !!*  input !* literally, returns !* where * is any string
+        /// !!* input !* literally, returns !* where * is any string
         /// !h  prints out field's Quick Help, returns null
         /// All others tilde comments are invalid and return null
         ///

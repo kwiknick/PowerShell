@@ -1,8 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
-
-// for fxcop
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Concurrent;
@@ -95,7 +92,7 @@ namespace System.Management.Automation.Language
                     {
                         if (!reportAmbiguousException)
                         {
-                            // accelerator  for the common case, when we are not interested  in ambiguity exception.
+                            // accelerator for the common case, when we are not interested in ambiguity exception.
                             return targetType;
                         }
 
@@ -142,28 +139,18 @@ namespace System.Management.Automation.Language
         /// </summary>
         internal static bool IsPublic(Type type)
         {
-            TypeInfo typeInfo = type.GetTypeInfo();
-            return IsPublic(typeInfo);
-        }
-
-        /// <summary>
-        /// A typeInfo is public if IsPublic or (IsNestedPublic and is nested in public type(s))
-        /// </summary>
-        internal static bool IsPublic(TypeInfo typeInfo)
-        {
-            if (typeInfo.IsPublic)
+            if (type.IsPublic)
             {
                 return true;
             }
-            if (!typeInfo.IsNestedPublic)
+            if (!type.IsNestedPublic)
             {
                 return false;
             }
-            Type type;
-            while ((type = typeInfo.DeclaringType) != null)
+
+            while ((type = type.DeclaringType) != null)
             {
-                typeInfo = type.GetTypeInfo();
-                if (!(typeInfo.IsPublic || typeInfo.IsNestedPublic))
+                if (!(type.IsPublic || type.IsNestedPublic))
                 {
                     return false;
                 }
@@ -736,6 +723,7 @@ namespace System.Management.Automation
                     { typeof(AllowEmptyStringAttribute),                   new[] { "AllowEmptyString" } },
                     { typeof(AllowNullAttribute),                          new[] { "AllowNull" } },
                     { typeof(ArgumentCompleterAttribute),                  new[] { "ArgumentCompleter" } },
+                    { typeof(ArgumentCompletionsAttribute),                new[] { "ArgumentCompletions" } },
                     { typeof(Array),                                       new[] { "array" } },
                     { typeof(bool),                                        new[] { "bool" } },
                     { typeof(byte),                                        new[] { "byte" } },
@@ -804,6 +792,7 @@ namespace System.Management.Automation
                     { typeof(XmlDocument),                                 new[] { "xml" } },
                     { typeof(CimSession),                                  new[] { "CimSession" } },
                     { typeof(MailAddress),                                 new[] { "mailaddress" } },
+                    { typeof(SemanticVersion),                             new[] { "semver" } },
 #if !CORECLR
                     // Following types not in CoreCLR
                     { typeof(DirectoryEntry),                              new[] { "adsi" } },
@@ -821,14 +810,13 @@ namespace System.Management.Automation
             {
                 return true;
             }
-            var inputTypeInfo = inputType.GetTypeInfo();
-            if (inputTypeInfo.IsEnum)
+            if (inputType.IsEnum)
             {
                 return true;
             }
-            if (inputTypeInfo.IsGenericType)
+            if (inputType.IsGenericType)
             {
-                var genericTypeDefinition = inputTypeInfo.GetGenericTypeDefinition();
+                var genericTypeDefinition = inputType.GetGenericTypeDefinition();
                 return genericTypeDefinition == typeof(Nullable<>) || genericTypeDefinition == typeof(FlagsExpression<>);
             }
             return (inputType.IsArray && Contains(inputType.GetElementType()));

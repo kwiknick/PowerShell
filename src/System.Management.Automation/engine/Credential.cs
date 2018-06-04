@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 #pragma warning disable 1634, 1691
 
@@ -239,7 +238,6 @@ namespace System.Management.Automation
 
         private NetworkCredential _netCred;
 
-
         /// <summary>
         /// Returns an equivalent NetworkCredential object for this
         /// PSCredential.
@@ -271,7 +269,6 @@ namespace System.Management.Automation
 
             return _netCred;
         }
-
 
         /// <summary>
         /// Provides an explicit cast to get a NetworkCredential
@@ -330,6 +327,12 @@ namespace System.Management.Automation
                                             out string user,
                                             out string domain)
         {
+            if (String.IsNullOrEmpty(input))
+            {
+                user = domain = null;
+                return false;
+            }
+
             SplitUserDomain(input, out user, out domain);
 
             if ((user == null) ||

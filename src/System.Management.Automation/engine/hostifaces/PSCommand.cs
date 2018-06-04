@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Management.Automation.Runspaces;
 using Dbg = System.Management.Automation.Diagnostics;
@@ -146,7 +145,7 @@ namespace System.Management.Automation
         }
 
         /// <summary>
-        /// Add a piece of script  to construct a command pipeline.
+        /// Add a piece of script to construct a command pipeline.
         /// For example, to construct a command string "get-process | foreach { $_.Name }"
         ///     <code>
         ///         PSCommand command = new PSCommand("get-process").
@@ -187,7 +186,7 @@ namespace System.Management.Automation
         }
 
         /// <summary>
-        /// Add a piece of script  to construct a command pipeline.
+        /// Add a piece of script to construct a command pipeline.
         /// For example, to construct a command string "get-process | foreach { $_.Name }"
         ///     <code>
         ///         PSCommand command = new PSCommand("get-process").

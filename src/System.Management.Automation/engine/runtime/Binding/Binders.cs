@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.Collections;
 using System.Collections.Concurrent;
@@ -19,7 +18,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
-
 
 namespace System.Management.Automation.Language
 {
@@ -338,32 +336,72 @@ namespace System.Management.Automation.Language
 
     internal static class DynamicMetaObjectBinderExtensions
     {
-        internal static DynamicMetaObject DeferForPSObject(this DynamicMetaObjectBinder binder,
-                                                           params DynamicMetaObject[] args)
+        internal static DynamicMetaObject DeferForPSObject(this DynamicMetaObjectBinder binder, DynamicMetaObject target, bool targetIsComObject = false)
         {
+            Diagnostics.Assert(target.Value is PSObject, "target must be a psobject");
+
+            BindingRestrictions restrictions = BindingRestrictions.Empty;
+            Expression expr = ProcessOnePSObject(target, ref restrictions, argIsComObject: targetIsComObject);
+            return new DynamicMetaObject(DynamicExpression.Dynamic(binder, binder.ReturnType, expr), restrictions);
+        }
+
+        internal static DynamicMetaObject DeferForPSObject(this DynamicMetaObjectBinder binder, DynamicMetaObject target, DynamicMetaObject arg, bool targetIsComObject = false)
+        {
+            Diagnostics.Assert(target.Value is PSObject || arg.Value is PSObject, "At least one arg must be a psobject");
+
+            BindingRestrictions restrictions = BindingRestrictions.Empty;
+            Expression expr1 = ProcessOnePSObject(target, ref restrictions, argIsComObject: targetIsComObject);
+            Expression expr2 = ProcessOnePSObject(arg, ref restrictions, argIsComObject: false);
+            return new DynamicMetaObject(DynamicExpression.Dynamic(binder, binder.ReturnType, expr1, expr2), restrictions);
+        }
+
+        internal static DynamicMetaObject DeferForPSObject(this DynamicMetaObjectBinder binder, DynamicMetaObject[] args, bool targetIsComObject = false)
+        {
+            Diagnostics.Assert(args != null && args.Length > 0, "args should not be null or empty");
             Diagnostics.Assert(args.Any(mo => mo.Value is PSObject), "At least one arg must be a psobject");
 
             Expression[] exprs = new Expression[args.Length];
             BindingRestrictions restrictions = BindingRestrictions.Empty;
-            for (int i = 0; i < args.Length; i++)
+
+            // Target maps to arg[0] of the binder.
+            exprs[0] = ProcessOnePSObject(args[0], ref restrictions, targetIsComObject);
+            for (int i = 1; i < args.Length; i++)
             {
-                var baseValue = PSObject.Base(args[i].Value);
-                if (baseValue != args[i].Value)
-                {
-                    exprs[i] = Expression.Call(CachedReflectionInfo.PSObject_Base,
-                                               args[i].Expression.Cast(typeof(object)));
-                    restrictions = restrictions
-                        .Merge(args[i].GetSimpleTypeRestriction())
-                        .Merge(BindingRestrictions.GetExpressionRestriction(Expression.NotEqual(exprs[i], args[i].Expression)));
-                }
-                else
-                {
-                    exprs[i] = args[i].Expression;
-                    restrictions = restrictions.Merge(args[i].PSGetTypeRestriction());
-                }
+                exprs[i] = ProcessOnePSObject(args[i], ref restrictions, argIsComObject: false);
             }
 
             return new DynamicMetaObject(DynamicExpression.Dynamic(binder, binder.ReturnType, exprs), restrictions);
+        }
+
+        private static Expression ProcessOnePSObject(DynamicMetaObject arg, ref BindingRestrictions restrictions, bool argIsComObject = false)
+        {
+            Expression expr = null;
+            object baseValue = PSObject.Base(arg.Value);
+            if (baseValue != arg.Value)
+            {
+                expr = Expression.Call(CachedReflectionInfo.PSObject_Base, arg.Expression.Cast(typeof(object)));
+
+                if (argIsComObject)
+                {
+                    // The 'base' is a COM object, so bake that in the rule.
+                    restrictions = restrictions
+                        .Merge(arg.GetSimpleTypeRestriction())
+                        .Merge(BindingRestrictions.GetExpressionRestriction(Expression.Call(CachedReflectionInfo.Utils_IsComObject, expr)));
+                }
+                else
+                {
+                    // Use a more general condition for the rule: 'arg' is a PSObject and 'base != arg'.
+                    restrictions = restrictions
+                        .Merge(arg.GetSimpleTypeRestriction())
+                        .Merge(BindingRestrictions.GetExpressionRestriction(Expression.NotEqual(expr, arg.Expression)));
+                }
+            }
+            else
+            {
+                expr = arg.Expression;
+                restrictions = restrictions.Merge(arg.PSGetTypeRestriction());
+            }
+            return expr;
         }
 
         internal static DynamicMetaObject UpdateComRestrictionsForPsObject(this DynamicMetaObject binder, DynamicMetaObject[] args)
@@ -372,7 +410,7 @@ namespace System.Management.Automation.Language
             BindingRestrictions newRestrictions = binder.Restrictions;
             newRestrictions = args.Aggregate(newRestrictions, (current, arg) =>
             {
-                if (arg.LimitType.GetTypeInfo().IsValueType)
+                if (arg.LimitType.IsValueType)
                 {
                     return current.Merge(arg.GetSimpleTypeRestriction());
                 }
@@ -554,8 +592,6 @@ namespace System.Management.Automation.Language
                 return (errorSuggestion ?? NullResult(target)).WriteToDebugLog(this);
             }
 
-#if !CORECLR
-            // In CORECLR System.Data.DataTable does not have the DataRowCollection IEnumerable, so disabling code.
             if (targetValue is DataTable)
             {
                 // Generate:
@@ -582,9 +618,8 @@ namespace System.Management.Automation.Language
                         target),
                     GetRestrictions(target))).WriteToDebugLog(this);
             }
-#endif
 
-            if (IsComObject(targetValue))
+            if (Utils.IsComObject(targetValue))
             {
                 // Pretend that all com objects are enumerable, even if they aren't.  We do this because it's technically impossible
                 // to know if a com object is enumerable without just trying to cast it to IEnumerable.  We could generate a rule like:
@@ -596,8 +631,8 @@ namespace System.Management.Automation.Language
                 // EnumerableOps.NonEnumerableObjectEnumerator for more comments on how this works.
 
                 var bindingRestrictions = BindingRestrictions.GetExpressionRestriction(
-                    Expression.Call(typeof(PSEnumerableBinder).GetMethod("IsComObject", BindingFlags.Static | BindingFlags.NonPublic),
-                                    target.Expression));
+                    Expression.Call(CachedReflectionInfo.Utils_IsComObject,
+                                    Expression.Call(CachedReflectionInfo.PSObject_Base, target.Expression)));
                 return new DynamicMetaObject(
                     Expression.Call(CachedReflectionInfo.EnumerableOps_GetCOMEnumerator, target.Expression), bindingRestrictions).WriteToDebugLog(this);
             }
@@ -611,7 +646,7 @@ namespace System.Management.Automation.Language
 
                 foreach (var i in targetValue.GetType().GetInterfaces())
                 {
-                    if (i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                    if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
                     {
                         return (new DynamicMetaObject(
                             MaybeDebase(this, e => Expression.Call(
@@ -654,7 +689,7 @@ namespace System.Management.Automation.Language
                 return false;
             }
 
-            if (type.GetTypeInfo().IsSealed && !typeof(IEnumerable).IsAssignableFrom(type) && !typeof(IEnumerator).IsAssignableFrom(type))
+            if (type.IsSealed && !typeof(IEnumerable).IsAssignableFrom(type) && !typeof(IEnumerator).IsAssignableFrom(type))
             {
                 return false;
             }
@@ -671,25 +706,6 @@ namespace System.Management.Automation.Language
             return (result == DynamicMetaObjectExtensions.FakeError) ? null : result;
         }
 
-        // This is to reduce the runtime overhead of the feature query
-        private static readonly TypeInfo s_comObjectTypeInfo = GetComObjectType();
-
-        private static TypeInfo GetComObjectType()
-        {
-#if UNIX
-            return null;
-#else
-            return typeof(object).GetTypeInfo().Assembly.GetType("System.__ComObject").GetTypeInfo();
-#endif
-        }
-
-        internal static bool IsComObject(object obj)
-        {
-            // we can't use System.Runtime.InteropServices.Marshal.IsComObject(obj) since it doesn't work in partial trust
-            obj = PSObject.Base(obj);
-            return obj != null && s_comObjectTypeInfo != null && s_comObjectTypeInfo.IsAssignableFrom(obj.GetType().GetTypeInfo());
-        }
-
         private static IEnumerator AutomationNullRule(CallSite site, object obj)
         {
             return obj == AutomationNull.Value
@@ -699,7 +715,7 @@ namespace System.Management.Automation.Language
 
         private static IEnumerator NotEnumerableRule(CallSite site, object obj)
         {
-            if (!(obj is PSObject) && !(obj is IEnumerable) && !(obj is IEnumerator) && !(obj is DataTable) && !IsComObject(obj))
+            if (!(obj is PSObject) && !(obj is IEnumerable) && !(obj is IEnumerator) && !(obj is DataTable) && !Utils.IsComObject(obj))
             {
                 return null;
             }
@@ -833,12 +849,11 @@ namespace System.Management.Automation.Language
                     BindingRestrictions.GetInstanceRestriction(target.Expression, AutomationNull.Value))).WriteToDebugLog(this);
             }
 
-
             var enumerable = PSEnumerableBinder.IsEnumerable(target);
             if (enumerable == null)
             {
                 var bindingResult = PSVariableAssignmentBinder.Get().Bind(target, Utils.EmptyArray<DynamicMetaObject>());
-                var restrictions = target.LimitType.GetTypeInfo().IsValueType
+                var restrictions = target.LimitType.IsValueType
                     ? bindingResult.Restrictions
                     : target.PSGetTypeRestriction();
                 return (new DynamicMetaObject(
@@ -1856,7 +1871,7 @@ namespace System.Management.Automation.Language
                 {
                     var baseObjType = baseObject.GetType();
                     restrictions = restrictions.Merge(BindingRestrictions.GetTypeRestriction(baseObjExpr, baseObjType));
-                    if (baseObjType.GetTypeInfo().IsValueType)
+                    if (baseObjType.IsValueType)
                     {
                         expr = GetExprForValueType(baseObjType, Expression.Convert(baseObjExpr, baseObjType), expr, ref restrictions);
                     }
@@ -1873,7 +1888,7 @@ namespace System.Management.Automation.Language
             }
 
             var type = value.GetType();
-            if (type.GetTypeInfo().IsValueType)
+            if (type.IsValueType)
             {
                 var expr = target.Expression;
                 var restrictions = target.PSGetTypeRestriction();
@@ -1978,8 +1993,7 @@ namespace System.Management.Automation.Language
 
         internal static bool IsValueTypeMutable(Type type)
         {
-            TypeInfo typeInfo = type.GetTypeInfo();
-            if (typeInfo.IsPrimitive || typeInfo.IsEnum)
+            if (type.IsPrimitive || type.IsEnum)
             {
                 return false;
             }
@@ -2017,7 +2031,7 @@ namespace System.Management.Automation.Language
 
         internal static void NoteTypeHasInstanceMemberOrTypeName(Type type)
         {
-            if (!type.GetTypeInfo().IsValueType || !IsValueTypeMutable(type))
+            if (!type.IsValueType || !IsValueTypeMutable(type))
             {
                 return;
             }
@@ -2442,7 +2456,7 @@ namespace System.Management.Automation.Language
                            catchExpr);
             }
 
-            if (target.LimitType.GetTypeInfo().IsEnum)
+            if (target.LimitType.IsEnum)
             {
                 // Make sure the result type is an enum unless we were expecting a bool.
                 switch (Operation)
@@ -2543,7 +2557,7 @@ namespace System.Management.Automation.Language
             }
 
             bool boolToDecimal = false;
-            if (arg.LimitType.IsNumericOrPrimitive() && !arg.LimitType.GetTypeInfo().IsEnum)
+            if (arg.LimitType.IsNumericOrPrimitive() && !arg.LimitType.IsEnum)
             {
                 if (!(targetType == typeof(Decimal) && arg.LimitType == typeof(bool)))
                 {
@@ -2558,7 +2572,7 @@ namespace System.Management.Automation.Language
 
             // ConstrainedLanguage note - calls to this conversion only target numeric types.
             var conversion = LanguagePrimitives.FigureConversion(arg.Value, targetType, out debase);
-            if (conversion.Rank == ConversionRank.ImplicitCast || boolToDecimal || arg.LimitType.GetTypeInfo().IsEnum)
+            if (conversion.Rank == ConversionRank.ImplicitCast || boolToDecimal || arg.LimitType.IsEnum)
             {
                 return new DynamicMetaObject(
                     PSConvertBinder.InvokeConverter(conversion, arg.Expression, targetType, debase, ExpressionCache.InvariantCulture),
@@ -2872,8 +2886,8 @@ namespace System.Management.Automation.Language
                 return new DynamicMetaObject(ExpressionCache.Constant(0).Cast(typeof(object)), target.CombineRestrictions(arg));
             }
 
-            var targetUnderlyingType = (target.LimitType.GetTypeInfo().IsEnum) ? Enum.GetUnderlyingType(target.LimitType) : target.LimitType;
-            var argUnderlyingType = (arg.LimitType.GetTypeInfo().IsEnum) ? Enum.GetUnderlyingType(arg.LimitType) : arg.LimitType;
+            var targetUnderlyingType = (target.LimitType.IsEnum) ? Enum.GetUnderlyingType(target.LimitType) : target.LimitType;
+            var argUnderlyingType = (arg.LimitType.IsEnum) ? Enum.GetUnderlyingType(arg.LimitType) : arg.LimitType;
 
             if (targetUnderlyingType.IsNumericOrPrimitive() || argUnderlyingType.IsNumericOrPrimitive())
             {
@@ -2937,7 +2951,7 @@ namespace System.Management.Automation.Language
                     var expr = exprGenerator(numericTarget.Expression.Cast(numericTarget.LimitType).Cast(opType),
                                              numericArg.Expression.Cast(numericArg.LimitType).Cast(opType));
 
-                    if (target.LimitType.GetTypeInfo().IsEnum)
+                    if (target.LimitType.IsEnum)
                     {
                         expr = expr.Cast(target.LimitType);
                     }
@@ -3256,7 +3270,7 @@ namespace System.Management.Automation.Language
             {
                 foreach (var i in target.Value.GetType().GetInterfaces())
                 {
-                    if (i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IComparable<>))
+                    if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IComparable<>))
                     {
                         return new DynamicMetaObject(
                             toResult(Expression.Call(Expression.Convert(target.Expression, i),
@@ -3508,7 +3522,7 @@ namespace System.Management.Automation.Language
                 var typeCode = LanguagePrimitives.GetTypeCode(target.LimitType);
                 if (typeCode < TypeCode.Int32)
                 {
-                    targetExpr = target.LimitType.GetTypeInfo().IsEnum
+                    targetExpr = target.LimitType.IsEnum
                         ? target.Expression.Cast(Enum.GetUnderlyingType(target.LimitType))
                         : target.Expression.Cast(target.LimitType);
                     targetExpr = targetExpr.Cast(typeof(int));
@@ -3516,7 +3530,7 @@ namespace System.Management.Automation.Language
                 else if (typeCode <= TypeCode.UInt64)
                 {
                     var targetConvertType = target.LimitType;
-                    if (targetConvertType.GetTypeInfo().IsEnum)
+                    if (targetConvertType.IsEnum)
                     {
                         targetConvertType = Enum.GetUnderlyingType(targetConvertType);
                     }
@@ -3536,7 +3550,7 @@ namespace System.Management.Automation.Language
             if (targetExpr != null)
             {
                 Expression result = Expression.OnesComplement(targetExpr);
-                if (target.LimitType.GetTypeInfo().IsEnum)
+                if (target.LimitType.IsEnum)
                 {
                     result = result.Cast(target.LimitType);
                 }
@@ -3728,7 +3742,6 @@ namespace System.Management.Automation.Language
             }
         }
 
-
         internal static DynamicMetaObject ThrowNoConversion(DynamicMetaObject target, Type toType, DynamicMetaObjectBinder binder,
             int currentVersion, params DynamicMetaObject[] args)
         {
@@ -3795,7 +3808,7 @@ namespace System.Management.Automation.Language
             {
                 return conv;
             }
-            if (resultType.GetTypeInfo().IsValueType && Nullable.GetUnderlyingType(resultType) == null)
+            if (resultType.IsValueType && Nullable.GetUnderlyingType(resultType) == null)
             {
                 return Expression.Unbox(conv, resultType);
             }
@@ -3866,7 +3879,6 @@ namespace System.Management.Automation.Language
             }
         }
 
-
         public override DynamicMetaObject FallbackGetIndex(DynamicMetaObject target, DynamicMetaObject[] indexes, DynamicMetaObject errorSuggestion)
         {
             if (!target.HasValue || indexes.Any(mo => !mo.HasValue))
@@ -3912,7 +3924,7 @@ namespace System.Management.Automation.Language
 
             foreach (var i in target.LimitType.GetInterfaces())
             {
-                if (i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>))
+                if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>))
                 {
                     var result = GetIndexDictionary(target, indexes, i);
                     if (result != null)
@@ -4028,7 +4040,7 @@ namespace System.Management.Automation.Language
             }
 
             // target implements IList<T>?
-            return limitType.GetInterfaces().Any(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IList<>));
+            return limitType.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IList<>));
         }
 
         private DynamicMetaObject IndexWithNegativeChecks(
@@ -4626,7 +4638,6 @@ namespace System.Management.Automation.Language
                        PSConvertBinder.ThrowNoConversion(indexes[0], typeof(int), this, _version, target, value);
             }
 
-
             var elementType = target.LimitType.GetElementType();
             var valueExpr = PSGetIndexBinder.ConvertIndex(value, elementType);
             if (valueExpr == null)
@@ -4977,9 +4988,13 @@ namespace System.Management.Automation.Language
             if (target.Value is PSObject && (PSObject.Base(target.Value) != target.Value))
             {
                 Object baseObject = PSObject.Base(target.Value);
-                if ((baseObject != null) && (baseObject.GetType().FullName.Equals("System.__ComObject")))
+                if (baseObject != null && Utils.IsComObject(baseObject))
                 {
-                    return this.DeferForPSObject(target).WriteToDebugLog(this);
+                    // We unwrap only if the 'base' is a COM object. It's unnecessary to unwrap in other cases,
+                    // especially in the case of strings, we would lose instance members on the PSObject.
+                    // Therefore, we need to use a stricter restriction to make sure PSObject 'target' with other
+                    // base types doesn't get unwrapped.
+                    return this.DeferForPSObject(target, targetIsComObject: true).WriteToDebugLog(this);
                 }
             }
 
@@ -5037,7 +5052,7 @@ namespace System.Management.Automation.Language
 
             bool canOptimize;
             Type aliasConversionType;
-            memberInfo = GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType);
+            memberInfo = GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType, MemberTypes.Property);
 
             if (!canOptimize)
             {
@@ -5069,7 +5084,7 @@ namespace System.Management.Automation.Language
                         var adapterData = property.adapterData as DotNetAdapter.PropertyCacheEntry;
                         Diagnostics.Assert(adapterData != null, "We have an unknown PSProperty that we aren't correctly optimizing.");
 
-                        if (!adapterData.member.DeclaringType.GetTypeInfo().IsGenericTypeDefinition)
+                        if (!adapterData.member.DeclaringType.IsGenericTypeDefinition)
                         {
                             // For static property access, the target expr must be null.  For non-static, we must convert
                             // because target.Expression is typeof(object) because this is a dynamic site.
@@ -5183,7 +5198,7 @@ namespace System.Management.Automation.Language
             bool isGeneric = false;
             foreach (var i in value.GetType().GetInterfaces())
             {
-                if (i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>))
+                if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>))
                 {
                     isGeneric = true;
                     var genericArguments = i.GetGenericArguments();
@@ -5216,27 +5231,26 @@ namespace System.Management.Automation.Language
             }
 
             var type = castToType ?? ((value != null) ? value.GetType() : typeof(object));
-#if CORECLR
-            var typeInfo = type.GetTypeInfo();
+
             // Assemblies in CoreCLR might not allow reflection execution on their internal types. In such case, we walk up
             // the derivation chain to find the first public parent, and use reflection methods on the public parent.
-            if (!TypeResolver.IsPublic(typeInfo) && DotNetAdapter.DisallowPrivateReflection(typeInfo))
+            if (!TypeResolver.IsPublic(type) && DotNetAdapter.DisallowPrivateReflection(type))
             {
-                var publicType = DotNetAdapter.GetFirstPublicParentType(typeInfo);
+                var publicType = DotNetAdapter.GetFirstPublicParentType(type);
                 if (publicType != null)
                 {
                     type = publicType;
                 }
                 // else we'll probably fail, but the error message might be more helpful than NullReferenceException
             }
-#endif
+
             if (expr.Type != type)
             {
                 // Unbox value types (or use Nullable<T>.Value) to avoid a copy in case the value is mutated.
                 // In case that castToType is System.Object and expr.Type is Nullable<ValueType>, expr.Cast(System.Object) will
                 // get the underlying value by default. So "GetTargetExpr(target).Cast(typeof(Object))" is actually the same as
                 // "GetTargetExpr(target, typeof(Object))".
-                expr = type.GetTypeInfo().IsValueType
+                expr = type.IsValueType
                            ? (Nullable.GetUnderlyingType(expr.Type) != null
                                   ? (Expression)Expression.Property(expr, "Value")
                                   : Expression.Unbox(expr, type))
@@ -5399,8 +5413,8 @@ namespace System.Management.Automation.Language
                 return null;
             }
 
-            PSMemberInfo result = binder.GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType, aliases, aliasRestrictions);
-
+            PSMemberInfo result = binder.GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType,
+                                                         MemberTypes.Property, aliases, aliasRestrictions);
             return result;
         }
 
@@ -5408,6 +5422,7 @@ namespace System.Management.Automation.Language
                                               out BindingRestrictions restrictions,
                                               out bool canOptimize,
                                               out Type aliasConversionType,
+                                              MemberTypes memberTypeToOperateOn,
                                               HashSet<string> aliases = null,
                                               List<BindingRestrictions> aliasRestrictions = null)
         {
@@ -5477,7 +5492,7 @@ namespace System.Management.Automation.Language
             var adapterSet = PSObject.GetMappedAdapter(value, typeTable);
             if (memberInfo == null)
             {
-                canOptimize = adapterSet.OriginalAdapter.SiteBinderCanOptimize;
+                canOptimize = adapterSet.OriginalAdapter.CanSiteBinderOptimize(memberTypeToOperateOn);
                 // Don't bother looking for the member if we're not going to use it.
                 if (canOptimize)
                 {
@@ -5587,7 +5602,7 @@ namespace System.Management.Automation.Language
                     else
                     {
                         DotNetAdapter.MethodCacheEntry method = new DotNetAdapter.MethodCacheEntry(candidateMethods.ToArray());
-                        memberInfo = new PSMethod(this.Name, PSObject.dotNetInstanceAdapter, null, method);
+                        memberInfo = PSMethod.Create(this.Name, PSObject.dotNetInstanceAdapter, null, method);
                     }
                 }
             }
@@ -5666,6 +5681,11 @@ namespace System.Management.Automation.Language
             if (memberInfo != null)
             {
                 return memberInfo.Value;
+            }
+
+            if (string.Equals(member, "Length", StringComparison.OrdinalIgnoreCase) || string.Equals(member, "Count", StringComparison.OrdinalIgnoreCase))
+            {
+                return 1;
             }
 
             if (context != null && context.IsStrictVersion(2))
@@ -5839,9 +5859,13 @@ namespace System.Management.Automation.Language
                 (value.Value is PSObject && (PSObject.Base(value.Value) != value.Value)))
             {
                 Object baseObject = PSObject.Base(target.Value);
-                if ((baseObject != null) && (baseObject.GetType().FullName.Equals("System.__ComObject")))
+                if (baseObject != null && Utils.IsComObject(baseObject))
                 {
-                    return this.DeferForPSObject(target, value).WriteToDebugLog(this);
+                    // We unwrap only if the 'base' of 'target' is a COM object. It's unnecessary to unwrap in other cases,
+                    // especially in the case that 'target' is a string, we would lose instance members on the PSObject.
+                    // Therefore, we need to use a stricter restriction to make sure PSObject 'target' with other base types
+                    // doesn't get unwrapped.
+                    return this.DeferForPSObject(target, value, targetIsComObject: true).WriteToDebugLog(this);
                 }
             }
 
@@ -5944,7 +5968,7 @@ namespace System.Management.Automation.Language
             BindingRestrictions restrictions;
             bool canOptimize;
             Type aliasConversionType;
-            memberInfo = _getMemberBinder.GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType);
+            memberInfo = _getMemberBinder.GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType, MemberTypes.Property);
 
             restrictions = restrictions.Merge(value.PSGetTypeRestriction());
 
@@ -6000,7 +6024,7 @@ namespace System.Management.Automation.Language
                     {
                         Expression expr;
 
-                        if (data.member.DeclaringType.GetTypeInfo().IsGenericTypeDefinition)
+                        if (data.member.DeclaringType.IsGenericTypeDefinition)
                         {
                             Expression innerException = Expression.New(CachedReflectionInfo.SetValueException_ctor,
                                 Expression.Constant("PropertyAssignmentException"),
@@ -6356,9 +6380,13 @@ namespace System.Management.Automation.Language
                 args.Any(mo => mo.Value is PSObject && (PSObject.Base(mo.Value) != mo.Value)))
             {
                 Object baseObject = PSObject.Base(target.Value);
-                if ((baseObject != null) && (baseObject.GetType().FullName.Equals("System.__ComObject")))
+                if (baseObject != null && Utils.IsComObject(baseObject))
                 {
-                    return this.DeferForPSObject(args.Prepend(target).ToArray()).WriteToDebugLog(this);
+                    // We unwrap only if the 'base' of 'target' is a COM object. It's unnecessary to unwrap in other cases,
+                    // especially in the case that 'target' is a string, we would lose instance members on the PSObject.
+                    // Therefore, we need to use a stricter restriction to make sure other type of PSObject 'target'
+                    // doesn't get unwrapped.
+                    return this.DeferForPSObject(args.Prepend(target).ToArray(), targetIsComObject: true).WriteToDebugLog(this);
                 }
             }
 
@@ -6435,7 +6463,7 @@ namespace System.Management.Automation.Language
             BindingRestrictions restrictions;
             bool canOptimize;
             Type aliasConversionType;
-            var methodInfo = _getMemberBinder.GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType) as PSMethodInfo;
+            var methodInfo = _getMemberBinder.GetPSMemberInfo(target, out restrictions, out canOptimize, out aliasConversionType, MemberTypes.Method) as PSMethodInfo;
             restrictions = args.Aggregate(restrictions, (current, arg) => current.Merge(arg.PSGetMethodArgumentRestriction()));
 
             // If the process has ever used ConstrainedLanguage, then we need to add the language mode
@@ -6537,9 +6565,16 @@ namespace System.Management.Automation.Language
             var codeMethod = methodInfo as PSCodeMethod;
             if (codeMethod != null)
             {
-                return new DynamicMetaObject(
-                    InvokeMethod(codeMethod.CodeReference, null, args.Prepend(target).ToArray(), false, MethodInvocationType.Ordinary)
-                    .Cast(typeof(object)), restrictions).WriteToDebugLog(this);
+                Expression expr = InvokeMethod(codeMethod.CodeReference, null, args.Prepend(target).ToArray(), false, MethodInvocationType.Ordinary);
+                if (codeMethod.CodeReference.ReturnType == typeof(void))
+                {
+                    expr = Expression.Block(expr, ExpressionCache.AutomationNullConstant);
+                }
+                else
+                {
+                    expr = expr.Cast(typeof(object));
+                }
+                return new DynamicMetaObject(expr, restrictions).WriteToDebugLog(this);
             }
 
             var parameterizedProperty = methodInfo as PSParameterizedProperty;
@@ -6652,7 +6687,7 @@ namespace System.Management.Automation.Language
 
                 // Likewise, when calling methods in types defined by PowerShell, we don't
                 // want to wrap the exception.
-                if (methodInfo.DeclaringType.GetTypeInfo().Assembly.GetCustomAttributes(typeof(DynamicClassImplementationAssemblyAttribute)).Any())
+                if (methodInfo.DeclaringType.Assembly.GetCustomAttributes(typeof(DynamicClassImplementationAssemblyAttribute)).Any())
                 {
                     return new DynamicMetaObject(expr, restrictions);
                 }
@@ -7053,6 +7088,32 @@ namespace System.Management.Automation.Language
                 return methodInfo.Invoke(args);
             }
 
+            // The object doesn't have 'Where' and 'ForEach' methods.
+            // As a last resort, we invoke 'Where' and 'ForEach' operators on singletons like
+            //    ([pscustomobject]@{ foo = 'bar' }).Foreach({$_})
+            //    ([pscustomobject]@{ foo = 'bar' }).Where({1})
+            if (string.Equals(methodName, "Where", StringComparison.OrdinalIgnoreCase))
+            {
+                var enumerator = (new object[] {obj}).GetEnumerator();
+                switch (args.Length)
+                {
+                    case 1:
+                        return EnumerableOps.Where(enumerator, args[0] as ScriptBlock, WhereOperatorSelectionMode.Default, 0);
+                    case 2:
+                        return EnumerableOps.Where(enumerator, args[0] as ScriptBlock,
+                                                   LanguagePrimitives.ConvertTo<WhereOperatorSelectionMode>(args[1]), 0);
+                    case 3:
+                        return EnumerableOps.Where(enumerator, args[0] as ScriptBlock,
+                                                   LanguagePrimitives.ConvertTo<WhereOperatorSelectionMode>(args[1]), LanguagePrimitives.ConvertTo<int>(args[2]));
+                }
+            }
+
+            if (string.Equals(methodName, "Foreach", StringComparison.OrdinalIgnoreCase))
+            {
+                var enumerator = (new object[] {obj}).GetEnumerator();
+                return EnumerableOps.ForEach(enumerator, args[0], Utils.EmptyArray<object>());
+            }
+
             throw InterpreterError.NewInterpreterException(methodName, typeof(RuntimeException), null,
                 "MethodNotFound", ParserStrings.MethodNotFound, ParserOps.GetTypeFullName(obj), methodName);
         }
@@ -7169,7 +7230,6 @@ namespace System.Management.Automation.Language
             }
         }
 
-
         internal PSCreateInstanceBinder(CallInfo callInfo, PSMethodInvocationConstraints constraints, bool publicTypeOnly)
             : base(callInfo)
         {
@@ -7200,8 +7260,7 @@ namespace System.Management.Automation.Language
             var instanceType = targetValue as Type ?? targetValue.GetType();
 
             BindingRestrictions restrictions;
-            TypeInfo instanceTypeInfo = instanceType.GetTypeInfo();
-            if (_publicTypeOnly && !TypeResolver.IsPublic(instanceTypeInfo))
+            if (_publicTypeOnly && !TypeResolver.IsPublic(instanceType))
             {
                 // If 'publicTypeOnly' specified, we only support creating instance for public types.
                 restrictions = BindingRestrictions.GetExpressionRestriction(
@@ -7220,7 +7279,7 @@ namespace System.Management.Automation.Language
                                      : BindingRestrictions.GetInstanceRestriction(target.Expression, instanceType)
                                : target.PSGetTypeRestriction();
             restrictions = restrictions.Merge(BinderUtils.GetOptionalVersionAndLanguageCheckForType(this, instanceType, _version));
-            if (ctors.Length == 0 && _callInfo.ArgumentCount == 0 && instanceTypeInfo.IsValueType)
+            if (ctors.Length == 0 && _callInfo.ArgumentCount == 0 && instanceType.IsValueType)
             {
                 // No ctors, just call the default ctor
                 return new DynamicMetaObject(Expression.New(instanceType).Cast(this.ReturnType), restrictions).WriteToDebugLog(this);

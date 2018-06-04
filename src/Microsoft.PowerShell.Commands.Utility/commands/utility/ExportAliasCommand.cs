@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
@@ -54,7 +53,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         ///
         [Parameter(Mandatory = true, ValueFromPipelineByPropertyName = true, ParameterSetName = "ByLiteralPath")]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public string LiteralPath
         {
             get { return _path; }
@@ -254,7 +253,6 @@ namespace Microsoft.PowerShell.Commands
             }
         } // ProcessRecord
 
-
         /// <summary>
         /// Writes the aliases to the file
         /// </summary>
@@ -326,7 +324,6 @@ namespace Microsoft.PowerShell.Commands
 
             return result;
         }
-
 
         private void WriteHeader(StreamWriter writer)
         {

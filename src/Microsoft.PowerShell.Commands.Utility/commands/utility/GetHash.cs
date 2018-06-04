@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using System;
 using System.Collections.Generic;
 using System.Management.Automation;
@@ -40,7 +43,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         /// <value></value>
         [Parameter(Mandatory = true, ParameterSetName = LiteralPathParameterSet, Position = 0, ValueFromPipelineByPropertyName = true)]
-        [Alias("PSPath")]
+        [Alias("PSPath","LP")]
         public String[] LiteralPath
         {
             get
@@ -121,10 +124,11 @@ namespace Microsoft.PowerShell.Commands
             {
                 byte[] bytehash = null;
                 String hash = null;
+                Stream openfilestream = null;
 
                 try
                 {
-                    Stream openfilestream = File.OpenRead(path);
+                    openfilestream = File.OpenRead(path);
                     bytehash = hasher.ComputeHash(openfilestream);
 
                     hash = BitConverter.ToString(bytehash).Replace("-","");
@@ -137,6 +141,10 @@ namespace Microsoft.PowerShell.Commands
                         ErrorCategory.ObjectNotFound,
                         path);
                     WriteError(errorRecord);
+                }
+                finally
+                {
+                    openfilestream?.Dispose();
                 }
             }
         }

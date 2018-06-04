@@ -1,6 +1,5 @@
-﻿/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using Microsoft.PowerShell.Commands;
 using Microsoft.PowerShell.DesiredStateConfiguration.Internal;
@@ -119,7 +118,7 @@ namespace System.Management.Automation.Language
         }
 
         /// <summary>
-        /// Pop up previous  dynamicKeywords cache
+        /// Pop up previous dynamicKeywords cache
         /// </summary>
         public static void Pop()
         {
@@ -358,7 +357,6 @@ namespace System.Management.Automation.Language
         public Func<DynamicKeywordStatementAst, ParseError[]> SemanticCheck { get; set; }
     }
 
-
     internal static class DynamicKeywordExtension
     {
         internal static bool IsMetaDSCResource(this DynamicKeyword keyword)
@@ -494,6 +492,7 @@ namespace System.Management.Automation.Language
         internal string Script;
         internal int TokenStart;
         internal int CurrentIndex;
+        internal Token FirstToken;
         internal Token LastToken;
         internal BitArray SkippedCharOffsets;
         internal List<Token> TokenList;
@@ -506,6 +505,9 @@ namespace System.Management.Automation.Language
             = new Dictionary<string, TokenKind>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, TokenKind> s_operatorTable
             = new Dictionary<string, TokenKind>(StringComparer.OrdinalIgnoreCase);
+
+        private static readonly char s_invalidChar = char.MaxValue;
+        private static readonly int s_maxNumberOfUnicodeHexDigits = 6;
 
         private readonly Parser _parser;
         private PositionHelper _positionHelper;
@@ -678,7 +680,6 @@ namespace System.Management.Automation.Language
             _positionHelper.LineStartMap = lineStartMap.ToArray();
         }
 
-
         internal TokenizerState StartNestedScan(UnscannedSubExprToken nestedText)
         {
             TokenizerState ts = new TokenizerState
@@ -687,6 +688,7 @@ namespace System.Management.Automation.Language
                 NestedTokensAdjustment = _nestedTokensAdjustment,
                 Script = _script,
                 TokenStart = _tokenStart,
+                FirstToken = FirstToken,
                 LastToken = LastToken,
                 SkippedCharOffsets = _skippedCharOffsets,
                 TokenList = TokenList,
@@ -708,6 +710,7 @@ namespace System.Management.Automation.Language
             _nestedTokensAdjustment = ts.NestedTokensAdjustment;
             _script = ts.Script;
             _tokenStart = ts.TokenStart;
+            FirstToken = ts.FirstToken;
             LastToken = ts.LastToken;
             _skippedCharOffsets = ts.SkippedCharOffsets;
             TokenList = ts.TokenList;
@@ -771,7 +774,6 @@ namespace System.Management.Automation.Language
             }
             return false;
         }
-
 
         internal void SkipNewlines(bool skipSemis, bool v3)
         {
@@ -981,38 +983,40 @@ namespace System.Management.Automation.Language
 
             if (_beginSignatureExtent.StartOffset < ast.Extent.StartOffset)
             {
-                ReportError(ast.Extent, () => ParserStrings.TokenAfterEndOfValidScriptText);
+                ReportError(ast.Extent,
+                    nameof(ParserStrings.TokenAfterEndOfValidScriptText),
+                    ParserStrings.TokenAfterEndOfValidScriptText);
             }
         }
 
-        private void ReportError(int errorOffset, Expression<Func<string>> message, params object[] args)
+        private void ReportError(int errorOffset, string errorId, string errorMsg, params object[] args)
         {
-            _parser.ReportError(NewScriptExtent(errorOffset, errorOffset + 1), message, args);
+            _parser.ReportError(NewScriptExtent(errorOffset, errorOffset + 1), errorId, errorMsg, args);
         }
 
-        private void ReportError(IScriptExtent extent, Expression<Func<string>> message)
+        private void ReportError(IScriptExtent extent, string errorId, string errorMsg)
         {
-            _parser.ReportError(extent, message);
+            _parser.ReportError(extent, errorId, errorMsg);
         }
 
-        private void ReportError(IScriptExtent extent, Expression<Func<string>> message, object arg)
+        private void ReportError(IScriptExtent extent, string errorId, string errorMsg, object arg)
         {
-            _parser.ReportError(extent, message, arg);
+            _parser.ReportError(extent, errorId, errorMsg, arg);
         }
 
-        private void ReportError(IScriptExtent extent, Expression<Func<string>> message, object arg1, object arg2)
+        private void ReportError(IScriptExtent extent, string errorId, string errorMsg, object arg1, object arg2)
         {
-            _parser.ReportError(extent, message, arg1, arg2);
+            _parser.ReportError(extent, errorId, errorMsg, arg1, arg2);
         }
 
-        private void ReportIncompleteInput(int errorOffset, Expression<Func<string>> message)
+        private void ReportIncompleteInput(int errorOffset, string errorId, string errorMsg)
         {
-            _parser.ReportIncompleteInput(NewScriptExtent(errorOffset, _currentIndex), message);
+            _parser.ReportIncompleteInput(NewScriptExtent(errorOffset, _currentIndex), errorId, errorMsg);
         }
 
-        private void ReportIncompleteInput(int errorOffset, Expression<Func<string>> message, object arg)
+        private void ReportIncompleteInput(int errorOffset, string errorId, string errorMsg, object arg)
         {
-            _parser.ReportIncompleteInput(NewScriptExtent(errorOffset, _currentIndex), message, arg);
+            _parser.ReportIncompleteInput(NewScriptExtent(errorOffset, _currentIndex), errorId, errorMsg, arg);
         }
 
         private InternalScriptExtent NewScriptExtent(int start, int end)
@@ -1229,8 +1233,10 @@ namespace System.Management.Automation.Language
             return i;
         }
 
-        private static char Backtick(char c)
+        private char Backtick(char c, out char surrogateCharacter)
         {
+            surrogateCharacter = s_invalidChar;
+
             switch (c)
             {
                 case '0': return '\0';
@@ -1241,8 +1247,118 @@ namespace System.Management.Automation.Language
                 case 'n': return '\n';
                 case 'r': return '\r';
                 case 't': return '\t';
+                case 'u': return ScanUnicodeEscape(out surrogateCharacter);
                 case 'v': return '\v';
                 default: return c;
+            }
+        }
+
+        private char ScanUnicodeEscape(out char surrogateCharacter)
+        {
+            int escSeqStartIndex = _currentIndex - 2;
+            surrogateCharacter = s_invalidChar;
+
+            char c = GetChar();
+            if (c != '{')
+            {
+                UngetChar();
+
+                IScriptExtent errorExtent = NewScriptExtent(escSeqStartIndex, _currentIndex);
+                ReportError(errorExtent,
+                    nameof(ParserStrings.InvalidUnicodeEscapeSequence),
+                    ParserStrings.InvalidUnicodeEscapeSequence);
+                return s_invalidChar;
+            }
+
+            // Scan the rest of the Unicode escape sequence - one to six hex digits terminated plus the closing '}'.
+            var sb = GetStringBuilder();
+            int i;
+            for (i = 0; i < s_maxNumberOfUnicodeHexDigits + 1; i++)
+            {
+                c = GetChar();
+
+                // Sequence has been terminated.
+                if (c == '}')
+                {
+                    if (i == 0)
+                    {
+                        // Sequence must have at least one hex char.
+                        Release(sb);
+                        IScriptExtent errorExtent = NewScriptExtent(escSeqStartIndex, _currentIndex);
+                        ReportError(errorExtent,
+                            nameof(ParserStrings.InvalidUnicodeEscapeSequence),
+                            ParserStrings.InvalidUnicodeEscapeSequence);
+                        return s_invalidChar;
+                    }
+
+                    break;
+                }
+                else if (!c.IsHexDigit())
+                {
+                    UngetChar();
+
+                    Release(sb);
+                    if (i < s_maxNumberOfUnicodeHexDigits)
+                    {
+                        ReportError(_currentIndex,
+                            nameof(ParserStrings.InvalidUnicodeEscapeSequence),
+                            ParserStrings.InvalidUnicodeEscapeSequence);
+                    }
+                    else
+                    {
+                        ReportError(_currentIndex,
+                            nameof(ParserStrings.MissingUnicodeEscapeSequenceTerminator),
+                            ParserStrings.MissingUnicodeEscapeSequenceTerminator);
+                    }
+                    return s_invalidChar;
+                }
+                else if (i == s_maxNumberOfUnicodeHexDigits) {
+                    UngetChar();
+
+                    Release(sb);
+                    ReportError(_currentIndex,
+                        nameof(ParserStrings.TooManyDigitsInUnicodeEscapeSequence),
+                        ParserStrings.TooManyDigitsInUnicodeEscapeSequence);
+                    return s_invalidChar;
+                }
+
+                sb.Append(c);
+            }
+
+            string hexStr = GetStringAndRelease(sb);
+
+            uint unicodeValue = uint.Parse(hexStr, NumberStyles.AllowHexSpecifier, NumberFormatInfo.InvariantInfo);
+            if (unicodeValue <= Char.MaxValue)
+            {
+                return ((char)unicodeValue);
+            }
+            else if (unicodeValue <= 0x10FFFF)
+            {
+                return GetCharsFromUtf32(unicodeValue, out surrogateCharacter);
+            }
+            else
+            {
+                // Place the error indicator under only the hex digits in the esc sequence.
+                IScriptExtent errorExtent = NewScriptExtent(escSeqStartIndex + 3, _currentIndex - 1);
+                ReportError(errorExtent,
+                    nameof(ParserStrings.InvalidUnicodeEscapeSequenceValue),
+                    ParserStrings.InvalidUnicodeEscapeSequenceValue);
+                return s_invalidChar;
+            }
+        }
+
+        private static char GetCharsFromUtf32(uint codepoint, out char lowSurrogate)
+        {
+            if (codepoint < (uint)0x00010000)
+            {
+                lowSurrogate = s_invalidChar;
+                return (char)codepoint;
+            }
+            else
+            {
+                Diagnostics.Assert((codepoint > 0x0000FFFF) && (codepoint <= 0x0010FFFF), "Codepoint is out of range for a surrogate pair");
+                lowSurrogate = (char)((codepoint - 0x00010000) % 0x0400 + 0xDC00);
+                return (char)((codepoint - 0x00010000) / 0x0400 + 0xD800);
             }
         }
 
@@ -1452,7 +1568,9 @@ namespace System.Management.Automation.Language
                 else if (c == '\0' && AtEof())
                 {
                     UngetChar();
-                    ReportIncompleteInput(errorIndex, () => ParserStrings.MissingTerminatorMultiLineComment);
+                    ReportIncompleteInput(errorIndex,
+                        nameof(ParserStrings.MissingTerminatorMultiLineComment),
+                        ParserStrings.MissingTerminatorMultiLineComment);
                     break;
                 }
             }
@@ -1548,7 +1666,9 @@ namespace System.Management.Automation.Language
                     var commandName = commandAst.GetCommandName();
                     if (!string.Equals(commandName, "requires", StringComparison.OrdinalIgnoreCase))
                     {
-                        ReportError(commandAst.Extent, () => DiscoveryExceptions.ScriptRequiresInvalidFormat);
+                        ReportError(commandAst.Extent,
+                            nameof(DiscoveryExceptions.ScriptRequiresInvalidFormat),
+                            DiscoveryExceptions.ScriptRequiresInvalidFormat);
                     }
 
                     var snapinSpecified = false;
@@ -1579,7 +1699,9 @@ namespace System.Management.Automation.Language
                         }
                         else
                         {
-                            ReportError(commandAst.CommandElements[i].Extent, () => DiscoveryExceptions.ScriptRequiresInvalidFormat);
+                            ReportError(commandAst.CommandElements[i].Extent,
+                                nameof(DiscoveryExceptions.ScriptRequiresInvalidFormat),
+                                DiscoveryExceptions.ScriptRequiresInvalidFormat);
                         }
                     }
                     if (snapinName != null)
@@ -1638,21 +1760,29 @@ namespace System.Management.Automation.Language
                 requiresElevation = true;
                 if (argumentAst != null)
                 {
-                    ReportError(parameter.Extent, () => ParserStrings.ParameterCannotHaveArgument, parameter.ParameterName);
+                    ReportError(parameter.Extent,
+                        nameof(ParserStrings.ParameterCannotHaveArgument),
+                        ParserStrings.ParameterCannotHaveArgument,
+                        parameter.ParameterName);
                 }
                 return;
             }
 
             if (argumentAst == null)
             {
-                ReportError(parameter.Extent, () => ParserStrings.ParameterRequiresArgument, parameter.ParameterName);
+                ReportError(parameter.Extent,
+                    nameof(ParserStrings.ParameterRequiresArgument),
+                    ParserStrings.ParameterRequiresArgument,
+                    parameter.ParameterName);
                 return;
             }
 
             object argumentValue;
             if (!IsConstantValueVisitor.IsConstant(argumentAst, out argumentValue, forRequires: true))
             {
-                ReportError(argumentAst.Extent, () => ParserStrings.RequiresArgumentMustBeConstant);
+                ReportError(argumentAst.Extent,
+                    nameof(ParserStrings.RequiresArgumentMustBeConstant),
+                    ParserStrings.RequiresArgumentMustBeConstant);
                 return;
             }
 
@@ -1660,12 +1790,19 @@ namespace System.Management.Automation.Language
             {
                 if (requiredShellId != null)
                 {
-                    ReportError(parameter.Extent, () => ParameterBinderStrings.ParameterAlreadyBound, null, shellIDToken);
+                    ReportError(parameter.Extent,
+                        nameof(ParameterBinderStrings.ParameterAlreadyBound),
+                        ParameterBinderStrings.ParameterAlreadyBound,
+                        null,
+                        shellIDToken);
                     return;
                 }
                 if (!(argumentValue is string))
                 {
-                    ReportError(argumentAst.Extent, () => ParserStrings.RequiresInvalidStringArgument, shellIDToken);
+                    ReportError(argumentAst.Extent,
+                        nameof(ParserStrings.RequiresInvalidStringArgument),
+                        ParserStrings.RequiresInvalidStringArgument,
+                        shellIDToken);
                     return;
                 }
                 requiredShellId = (string)argumentValue;
@@ -1674,17 +1811,26 @@ namespace System.Management.Automation.Language
             {
                 if (!(argumentValue is string))
                 {
-                    ReportError(argumentAst.Extent, () => ParserStrings.RequiresInvalidStringArgument, PSSnapinToken);
+                    ReportError(argumentAst.Extent,
+                        nameof(ParserStrings.RequiresInvalidStringArgument),
+                        ParserStrings.RequiresInvalidStringArgument,
+                        PSSnapinToken);
                     return;
                 }
                 if (snapinName != null)
                 {
-                    ReportError(parameter.Extent, () => ParameterBinderStrings.ParameterAlreadyBound, null, PSSnapinToken);
+                    ReportError(parameter.Extent,
+                        nameof(ParameterBinderStrings.ParameterAlreadyBound),
+                        ParameterBinderStrings.ParameterAlreadyBound,
+                        null,
+                        PSSnapinToken);
                     return;
                 }
                 if (!PSSnapInInfo.IsPSSnapinIdValid((string)argumentValue))
                 {
-                    ReportError(argumentAst.Extent, () => MshSnapInCmdletResources.InvalidPSSnapInName);
+                    ReportError(argumentAst.Extent,
+                        nameof(MshSnapInCmdletResources.InvalidPSSnapInName),
+                        MshSnapInCmdletResources.InvalidPSSnapInName);
                     return;
                 }
 
@@ -1694,7 +1840,11 @@ namespace System.Management.Automation.Language
             {
                 if (requiredEditions != null)
                 {
-                    ReportError(parameter.Extent, () => ParameterBinderStrings.ParameterAlreadyBound, null, editionToken);
+                    ReportError(parameter.Extent,
+                        nameof(ParameterBinderStrings.ParameterAlreadyBound),
+                        ParameterBinderStrings.ParameterAlreadyBound,
+                        null,
+                        editionToken);
                     return;
                 }
 
@@ -1716,7 +1866,9 @@ namespace System.Management.Automation.Language
                 var version = Utils.StringToVersion(argumentText);
                 if (version == null)
                 {
-                    ReportError(argumentAst.Extent, () => ParserStrings.RequiresVersionInvalid);
+                    ReportError(argumentAst.Extent,
+                        nameof(ParserStrings.RequiresVersionInvalid),
+                        ParserStrings.RequiresVersionInvalid);
                     return;
                 }
 
@@ -1724,7 +1876,11 @@ namespace System.Management.Automation.Language
                 {
                     if (snapinVersion != null)
                     {
-                        ReportError(parameter.Extent, () => ParameterBinderStrings.ParameterAlreadyBound, null, versionToken);
+                        ReportError(parameter.Extent,
+                            nameof(ParameterBinderStrings.ParameterAlreadyBound),
+                            ParameterBinderStrings.ParameterAlreadyBound,
+                            null,
+                            versionToken);
                         return;
                     }
                     snapinVersion = version;
@@ -1733,7 +1889,11 @@ namespace System.Management.Automation.Language
                 {
                     if (requiredVersion != null && !requiredVersion.Equals(version))
                     {
-                        ReportError(parameter.Extent, () => ParameterBinderStrings.ParameterAlreadyBound, null, versionToken);
+                        ReportError(parameter.Extent,
+                            nameof(ParameterBinderStrings.ParameterAlreadyBound),
+                            ParameterBinderStrings.ParameterAlreadyBound,
+                            null,
+                            versionToken);
                         return;
                     }
                     requiredVersion = version;
@@ -1765,12 +1925,18 @@ namespace System.Management.Automation.Language
                     }
                     catch (InvalidCastException e)
                     {
-                        ReportError(argumentAst.Extent, () => ParserStrings.RequiresModuleInvalid, e.Message);
+                        ReportError(argumentAst.Extent,
+                            nameof(ParserStrings.RequiresModuleInvalid),
+                            ParserStrings.RequiresModuleInvalid,
+                            e.Message);
                         return;
                     }
                     catch (ArgumentException e)
                     {
-                        ReportError(argumentAst.Extent, () => ParserStrings.RequiresModuleInvalid, e.Message);
+                        ReportError(argumentAst.Extent,
+                            nameof(ParserStrings.RequiresModuleInvalid),
+                            ParserStrings.RequiresModuleInvalid,
+                            e.Message);
                         return;
                     }
                     if (requiredModules == null)
@@ -1780,7 +1946,9 @@ namespace System.Management.Automation.Language
             }
             else
             {
-                ReportError(parameter.Extent, () => DiscoveryExceptions.ScriptRequiresInvalidFormat);
+                ReportError(parameter.Extent,
+                    nameof(DiscoveryExceptions.ScriptRequiresInvalidFormat),
+                    DiscoveryExceptions.ScriptRequiresInvalidFormat);
             }
         }
 
@@ -1788,7 +1956,10 @@ namespace System.Management.Automation.Language
         {
             if (!(arg is string))
             {
-                ReportError(argumentAst.Extent, () => ParserStrings.RequiresInvalidStringArgument, assemblyToken);
+                ReportError(argumentAst.Extent,
+                    nameof(ParserStrings.RequiresInvalidStringArgument),
+                    ParserStrings.RequiresInvalidStringArgument,
+                    assemblyToken);
             }
             else
             {
@@ -1807,7 +1978,10 @@ namespace System.Management.Automation.Language
         {
             if (!(arg is string))
             {
-                ReportError(argumentAst.Extent, () => ParserStrings.RequiresInvalidStringArgument, editionToken);
+                ReportError(argumentAst.Extent,
+                    nameof(ParserStrings.RequiresInvalidStringArgument),
+                    ParserStrings.RequiresInvalidStringArgument,
+                    editionToken);
             }
             else
             {
@@ -1817,7 +1991,10 @@ namespace System.Management.Automation.Language
                 var edition = (string)arg;
                 if (!Utils.IsValidPSEditionValue(edition))
                 {
-                    ReportError(argumentAst.Extent, () => ParserStrings.RequiresPSEditionInvalid, editionToken);
+                    ReportError(argumentAst.Extent,
+                        nameof(ParserStrings.RequiresPSEditionInvalid),
+                        ParserStrings.RequiresPSEditionInvalid,
+                        editionToken);
                 }
 
                 if (!requiredEditions.Contains(edition, StringComparer.OrdinalIgnoreCase))
@@ -1826,7 +2003,10 @@ namespace System.Management.Automation.Language
                 }
                 else
                 {
-                    ReportError(argumentAst.Extent, () => ParserStrings.RequiresPSEditionValueIsAlreadySpecified, editionToken);
+                    ReportError(argumentAst.Extent,
+                        nameof(ParserStrings.RequiresPSEditionValueIsAlreadySpecified),
+                        ParserStrings.RequiresPSEditionValueIsAlreadySpecified,
+                        editionToken);
                 }
             }
             return requiredEditions;
@@ -1899,7 +2079,10 @@ namespace System.Management.Automation.Language
             {
                 // error - reached end of input without seeing terminator
                 UngetChar();
-                ReportIncompleteInput(errorIndex, () => ParserStrings.TerminatorExpectedAtEndOfString, "'");
+                ReportIncompleteInput(errorIndex,
+                    nameof(ParserStrings.TerminatorExpectedAtEndOfString),
+                    ParserStrings.TerminatorExpectedAtEndOfString,
+                    "'");
                 flags = TokenFlags.TokenInError;
             }
 
@@ -1964,7 +2147,9 @@ namespace System.Management.Automation.Language
                             goto default;
 
                         UngetChar();
-                        ReportIncompleteInput(_tokenStart, () => ParserStrings.IncompleteDollarSubexpressionReference);
+                        ReportIncompleteInput(_tokenStart,
+                            nameof(ParserStrings.IncompleteDollarSubexpressionReference),
+                            ParserStrings.IncompleteDollarSubexpressionReference);
                         flags = TokenFlags.TokenInError;
                         scanning = false;
                         break;
@@ -2029,7 +2214,13 @@ namespace System.Management.Automation.Language
                     if (c1 != 0)
                     {
                         SkipChar();
-                        c = Backtick(c1);
+                        c = Backtick(c1, out char surrogateCharacter);
+                        if (surrogateCharacter != s_invalidChar)
+                        {
+                            sb.Append(c).Append(surrogateCharacter);
+                            formatSb.Append(c).Append(surrogateCharacter);
+                            continue;
+                        }
                     }
                 }
                 if (c == '{' || c == '}')
@@ -2046,7 +2237,10 @@ namespace System.Management.Automation.Language
             if (c == '\0')
             {
                 UngetChar();
-                ReportIncompleteInput(errorIndex, () => ParserStrings.TerminatorExpectedAtEndOfString, "\"");
+                ReportIncompleteInput(errorIndex,
+                    nameof(ParserStrings.TerminatorExpectedAtEndOfString),
+                    ParserStrings.TerminatorExpectedAtEndOfString,
+                    "\"");
                 flags = TokenFlags.TokenInError;
             }
 
@@ -2134,7 +2328,10 @@ namespace System.Management.Automation.Language
                 if (c == '\0' && AtEof())
                 {
                     UngetChar();
-                    ReportIncompleteInput(headerOffset, () => ParserStrings.TerminatorExpectedAtEndOfString, string.Concat(header[1], '@'));
+                    ReportIncompleteInput(headerOffset,
+                        nameof(ParserStrings.TerminatorExpectedAtEndOfString),
+                        ParserStrings.TerminatorExpectedAtEndOfString,
+                        string.Concat(header[1], '@'));
                     return false;
                 }
 
@@ -2144,7 +2341,9 @@ namespace System.Management.Automation.Language
                 // scanning at the end of the line.  Don't skip the newline so we have a newline to terminate the current
                 // expression.
 
-                ReportError(_currentIndex, () => ParserStrings.UnexpectedCharactersAfterHereStringHeader);
+                ReportError(_currentIndex,
+                    nameof(ParserStrings.UnexpectedCharactersAfterHereStringHeader),
+                    ParserStrings.UnexpectedCharactersAfterHereStringHeader);
 
                 do
                 {
@@ -2262,11 +2461,16 @@ namespace System.Management.Automation.Language
                         UngetChar();
                         if (falseFooterOffset != -1)
                         {
-                            ReportIncompleteInput(falseFooterOffset, () => ParserStrings.WhitespaceBeforeHereStringFooter);
+                            ReportIncompleteInput(falseFooterOffset,
+                                nameof(ParserStrings.WhitespaceBeforeHereStringFooter),
+                                ParserStrings.WhitespaceBeforeHereStringFooter);
                         }
                         else
                         {
-                            ReportIncompleteInput(headerOffset, () => ParserStrings.TerminatorExpectedAtEndOfString, "'@");
+                            ReportIncompleteInput(headerOffset,
+                                nameof(ParserStrings.TerminatorExpectedAtEndOfString),
+                                ParserStrings.TerminatorExpectedAtEndOfString,
+                                "'@");
                         }
                         flags = TokenFlags.TokenInError;
                         break;
@@ -2338,7 +2542,13 @@ namespace System.Management.Automation.Language
                         if (c1 != 0)
                         {
                             SkipChar();
-                            c = Backtick(c1);
+                            c = Backtick(c1, out char surrogateCharacter);
+                            if (surrogateCharacter != s_invalidChar)
+                            {
+                                sb.Append(c).Append(surrogateCharacter);
+                                formatSb.Append(c).Append(surrogateCharacter);
+                                continue;
+                            }
                         }
                     }
                     if (c == '{' || c == '}')
@@ -2358,11 +2568,16 @@ namespace System.Management.Automation.Language
                         UngetChar();
                         if (falseFooterOffset != -1)
                         {
-                            ReportIncompleteInput(falseFooterOffset, () => ParserStrings.WhitespaceBeforeHereStringFooter);
+                            ReportIncompleteInput(falseFooterOffset,
+                                nameof(ParserStrings.WhitespaceBeforeHereStringFooter),
+                                ParserStrings.WhitespaceBeforeHereStringFooter);
                         }
                         else
                         {
-                            ReportIncompleteInput(headerOffset, () => ParserStrings.TerminatorExpectedAtEndOfString, "\"@");
+                            ReportIncompleteInput(headerOffset,
+                                nameof(ParserStrings.TerminatorExpectedAtEndOfString),
+                                ParserStrings.TerminatorExpectedAtEndOfString,
+                                "\"@");
                         }
                         flags = TokenFlags.TokenInError;
                         break;
@@ -2407,7 +2622,12 @@ namespace System.Management.Automation.Language
                                     UngetChar();
                                     goto end_braced_variable_scan;
                                 }
-                                c = Backtick(c1);
+                                c = Backtick(c1, out char surrogateCharacter);
+                                if (surrogateCharacter != s_invalidChar)
+                                {
+                                    sb.Append(c).Append(surrogateCharacter);
+                                    continue;
+                                }
                                 break;
                             }
                         case '"':
@@ -2433,7 +2653,9 @@ namespace System.Management.Automation.Language
                             }
                             break;
                         case '{':
-                            ReportError(_currentIndex, () => ParserStrings.OpenBraceNeedsToBeBackTickedInVariableName);
+                            ReportError(_currentIndex,
+                                nameof(ParserStrings.OpenBraceNeedsToBeBackTickedInVariableName),
+                                ParserStrings.OpenBraceNeedsToBeBackTickedInVariableName);
                             break;
                         case '\0':
                             if (AtEof())
@@ -2452,13 +2674,17 @@ namespace System.Management.Automation.Language
                 string name = GetStringAndRelease(sb);
                 if (c != '}')
                 {
-                    ReportIncompleteInput(errorStartPosition, () => ParserStrings.IncompleteDollarVariableReference);
+                    ReportIncompleteInput(errorStartPosition,
+                        nameof(ParserStrings.IncompleteDollarVariableReference),
+                        ParserStrings.IncompleteDollarVariableReference);
                 }
                 if (name.Length == 0)
                 {
                     if (c == '}')
                     {
-                        ReportError(_currentIndex - 1, () => ParserStrings.EmptyVariableReference);
+                        ReportError(_currentIndex - 1,
+                            nameof(ParserStrings.EmptyVariableReference),
+                            ParserStrings.EmptyVariableReference);
                     }
                     name = ":Error:";
                 }
@@ -2486,7 +2712,9 @@ namespace System.Management.Automation.Language
                     //{
                     //    return NewToken(TokenKind.Unknown);
                     //}
-                    ReportError(NewScriptExtent(_tokenStart, _currentIndex), () => ParserStrings.InvalidBracedVariableReference);
+                    ReportError(NewScriptExtent(_tokenStart, _currentIndex),
+                        nameof(ParserStrings.InvalidBracedVariableReference),
+                        ParserStrings.InvalidBracedVariableReference);
                 }
 
                 return NewVariableToken(path, false);
@@ -2646,16 +2874,19 @@ namespace System.Management.Automation.Language
             path = new VariablePath(GetStringAndRelease(sb));
             if (string.IsNullOrEmpty(path.UnqualifiedPath))
             {
-                Expression<Func<string>> msg;
+                string errorId;
+                string errorMsg;
                 if (path.IsDriveQualified)
                 {
-                    msg = () => ParserStrings.InvalidVariableReferenceWithDrive;
+                    errorId = nameof(ParserStrings.InvalidVariableReferenceWithDrive);
+                    errorMsg = ParserStrings.InvalidVariableReferenceWithDrive;
                 }
                 else
                 {
-                    msg = () => ParserStrings.InvalidVariableReference;
+                    errorId = nameof(ParserStrings.InvalidVariableReference);
+                    errorMsg = ParserStrings.InvalidVariableReference;
                 }
-                ReportError(NewScriptExtent(_tokenStart, _currentIndex), msg);
+                ReportError(NewScriptExtent(_tokenStart, _currentIndex), errorId, errorMsg);
             }
 
             return NewVariableToken(path, splatted);
@@ -2837,11 +3068,21 @@ namespace System.Management.Automation.Language
             return NewToken(tokenKind);
         }
 
-
         private Token ScanGenericToken(char firstChar)
         {
             var sb = GetStringBuilder();
             sb.Append(firstChar);
+            return ScanGenericToken(sb);
+        }
+
+        private Token ScanGenericToken(char firstChar, char surrogateCharacter)
+        {
+            var sb = GetStringBuilder();
+            sb.Append(firstChar);
+            if (surrogateCharacter != s_invalidChar)
+            {
+                sb.Append(surrogateCharacter);
+            }
             return ScanGenericToken(sb);
         }
 
@@ -2885,7 +3126,13 @@ namespace System.Management.Automation.Language
                     if (c1 != 0)
                     {
                         SkipChar();
-                        c = Backtick(c1);
+                        c = Backtick(c1, out char surrogateCharacter);
+                        if (surrogateCharacter != s_invalidChar)
+                        {
+                            sb.Append(c).Append(surrogateCharacter);
+                            formatSb.Append(c).Append(surrogateCharacter);
+                            continue;
+                        }
                     }
                 }
                 else if (c.IsSingleQuote())
@@ -3157,7 +3404,10 @@ namespace System.Management.Automation.Language
                     return ScanGenericToken(GetStringBuilder());
                 }
 
-                ReportError(_currentIndex, () => ParserStrings.BadNumericConstant, _script.Substring(_tokenStart, _currentIndex - _tokenStart));
+                ReportError(_currentIndex,
+                    nameof(ParserStrings.BadNumericConstant),
+                    ParserStrings.BadNumericConstant,
+                    _script.Substring(_tokenStart, _currentIndex - _tokenStart));
             }
 
             return NewNumberToken(value);
@@ -3767,7 +4017,9 @@ namespace System.Management.Automation.Language
                         return ScanVariable(true, false);
                     }
 
-                    ReportError(_currentIndex - 1, () => ParserStrings.UnrecognizedToken);
+                    ReportError(_currentIndex - 1,
+                        nameof(ParserStrings.UnrecognizedToken),
+                        ParserStrings.UnrecognizedToken);
                     return NewToken(TokenKind.Unknown);
 
                 case '#':
@@ -3794,14 +4046,17 @@ namespace System.Management.Automation.Language
                     }
                     if (c1 == '\0' && AtEof())
                     {
-                        ReportIncompleteInput(_currentIndex, () => ParserStrings.IncompleteString);
+                        ReportIncompleteInput(_currentIndex,
+                            nameof(ParserStrings.IncompleteString),
+                            ParserStrings.IncompleteString);
 
                         // Unget the EOF so we can return an EOF token.
                         UngetChar();
                         goto again;
                     }
 
-                    return ScanGenericToken(Backtick(c1));
+                    c = Backtick(c1, out char surrogateCharacter);
+                    return ScanGenericToken(c, surrogateCharacter);
 
                 case '=':
                     return CheckOperatorInCommandMode(c, TokenKind.Equals);

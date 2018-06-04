@@ -1,7 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
-
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System;
 using System.Text;
@@ -10,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
+using System.Management.Automation.Configuration;
 using System.Management.Automation.Runspaces;
 using System.Management.Automation.Internal;
 using System.Diagnostics;
@@ -169,6 +168,29 @@ namespace Microsoft.PowerShell
 
     internal class CommandLineParameterParser
     {
+        internal static string[] validParameters = {
+            "version",
+            "nologo",
+            "noexit",
+#if STAMODE
+            "sta",
+            "mta",
+#endif
+            "noprofile",
+            "noninteractive",
+            "inputformat",
+            "outputformat",
+            "windowstyle",
+            "encodedcommand",
+            "configurationname",
+            "file",
+            "executionpolicy",
+            "command",
+            "settingsfile",
+            "help",
+            "workingdirectory"
+        };
+
         internal CommandLineParameterParser(PSHostUserInterface hostUI, string bannerText, string helpText)
         {
             if (hostUI == null) { throw new PSArgumentNullException("hostUI"); }
@@ -224,14 +246,6 @@ namespace Microsoft.PowerShell
                 Dbg.Assert(_dirty, "Parse has not been called yet");
 
                 return _noExit;
-            }
-        }
-
-        internal bool ImportSystemModules
-        {
-            get
-            {
-                return _importSystemModules;
             }
         }
 
@@ -374,16 +388,19 @@ namespace Microsoft.PowerShell
             get { return _noInteractive; }
         }
 
+        internal string WorkingDirectory
+        {
+            get { return _workingDirectory; }
+        }
+
         private void ShowHelp()
         {
+            Dbg.Assert(_helpText != null, "_helpText should not be null");
             _hostUI.WriteLine("");
-            if (_helpText == null)
+            _hostUI.Write(_helpText);
+            if (_showExtendedHelp)
             {
-                _hostUI.WriteLine(CommandLineParameterParserStrings.DefaultHelp);
-            }
-            else
-            {
-                _hostUI.Write(_helpText);
+                _hostUI.Write(ManagedEntranceStrings.ExtendedHelp);
             }
             _hostUI.WriteLine("");
         }
@@ -398,6 +415,7 @@ namespace Microsoft.PowerShell
             }
         }
 
+#if STAMODE
         internal bool StaMode
         {
             get
@@ -408,17 +426,14 @@ namespace Microsoft.PowerShell
                 }
                 else
                 {
-#if CORECLR
                     // Nano doesn't support STA COM apartment, so on Nano powershell has to use MTA as the default.
-                    return false;
-#else
+                    // return false;
                     // Win8: 182409 PowerShell 3.0 should run in STA mode by default
                     return true;
-#endif
                 }
             }
         }
-
+#endif
 
         /// <summary>
         ///
@@ -452,29 +467,17 @@ namespace Microsoft.PowerShell
             }
         }
 
-        private static string s_groupPolicyBase = @"Software\Policies\Microsoft\Windows\PowerShell";
-        private static string s_consoleSessionConfigurationKey = "ConsoleSessionConfiguration";
-        private static string s_enableConsoleSessionConfiguration = "EnableConsoleSessionConfiguration";
-        private static string s_consoleSessionConfigurationName = "ConsoleSessionConfigurationName";
         private static string GetConfigurationNameFromGroupPolicy()
         {
             // Current user policy takes precedence.
-            var groupPolicySettings = Utils.GetGroupPolicySetting(s_groupPolicyBase, s_consoleSessionConfigurationKey, Utils.RegCurrentUserThenLocalMachine);
-            if (groupPolicySettings != null)
+            var consoleSessionSetting = Utils.GetPolicySetting<ConsoleSessionConfiguration>(Utils.CurrentUserThenSystemWideConfig);
+            if (consoleSessionSetting != null)
             {
-                object keyValue;
-                if (groupPolicySettings.TryGetValue(s_enableConsoleSessionConfiguration, out keyValue))
+                if (consoleSessionSetting.EnableConsoleSessionConfiguration == true)
                 {
-                    if (String.Equals(keyValue.ToString(), "1", StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrEmpty(consoleSessionSetting.ConsoleSessionConfigurationName))
                     {
-                        if (groupPolicySettings.TryGetValue(s_consoleSessionConfigurationName, out keyValue))
-                        {
-                            string consoleSessionConfigurationName = keyValue.ToString();
-                            if (!string.IsNullOrEmpty(consoleSessionConfigurationName))
-                            {
-                                return consoleSessionConfigurationName;
-                            }
-                        }
+                        return consoleSessionSetting.ConsoleSessionConfigurationName;
                     }
                 }
             }
@@ -499,10 +502,10 @@ namespace Microsoft.PowerShell
 
                 if (!SpecialCharacters.IsDash(switchKey[0]) && switchKey[0] != '/')
                 {
-                    // then its a command
+                    // then its a file
 
                     --i;
-                    ParseCommand(args, ref i, noexitSeen, false);
+                    ParseFile(args, ref i, noexitSeen);
                     break;
                 }
 
@@ -526,21 +529,16 @@ namespace Microsoft.PowerShell
                     _noExit = false;
                     break;
                 }
-
-
-                if (MatchSwitch(switchKey, "help", "h") || MatchSwitch(switchKey, "?", "?"))
+                else if (MatchSwitch(switchKey, "help", "h") || MatchSwitch(switchKey, "?", "?"))
                 {
                     _showHelp = true;
+                    _showExtendedHelp = true;
                     _abortStartup = true;
                 }
                 else if (MatchSwitch(switchKey, "noexit", "noe"))
                 {
                     _noExit = true;
                     noexitSeen = true;
-                }
-                else if (MatchSwitch(switchKey, "importsystemmodules", "imp"))
-                {
-                    _importSystemModules = true;
                 }
                 else if (MatchSwitch(switchKey, "noprofile", "nop"))
                 {
@@ -593,9 +591,13 @@ namespace Microsoft.PowerShell
                         break;
                     }
                 }
-#if !CORECLR  // windowstyle parameter not supported on NanoServer because ProcessWindowStyle does Not exist on CoreCLR
                 else if (MatchSwitch(switchKey, "windowstyle", "w"))
                 {
+#if UNIX
+                    WriteCommandLineError(
+                        CommandLineParameterParserStrings.WindowStyleArgumentNotImplemented);
+                    break;
+#else
                     ++i;
                     if (i >= args.Length)
                     {
@@ -616,130 +618,14 @@ namespace Microsoft.PowerShell
                             string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.InvalidWindowStyleArgument, args[i], e.Message));
                         break;
                     }
-                }
 #endif
+                }
                 else if (MatchSwitch(switchKey, "file", "f"))
                 {
-                    // Process file execution. We don't need to worry about checking -command
-                    // since if -command comes before -file, -file will be treated as part
-                    // of the script to evaluate. If -file comes before -command, it will
-                    // treat -command as an argument to the script...
-
-                    ++i;
-                    if (i >= args.Length)
+                    if (!ParseFile(args, ref i, noexitSeen))
                     {
-                        WriteCommandLineError(
-                            CommandLineParameterParserStrings.MissingFileArgument,
-                            showHelp: true,
-                            showBanner: true);
                         break;
                     }
-
-                    // Don't show the startup banner unless -noexit has been specified.
-                    if (!noexitSeen)
-                        _showBanner = false;
-
-                    // Process interactive input...
-                    if (args[i] == "-")
-                    {
-                        // the arg to -file is -, which is secret code for "read the commands from stdin with prompts"
-
-                        _explicitReadCommandsFromStdin = true;
-                        _noPrompt = false;
-                    }
-                    else
-                    {
-                        // Exit on script completion unless -noexit was specified...
-                        if (!noexitSeen)
-                            _noExit = false;
-
-                        // We need to get the full path to the script because it will be
-                        // executed after the profiles are run and they may change the current
-                        // directory.
-                        string exceptionMessage = null;
-                        try
-                        {
-                            // Normalize slashes
-                            _file = args[i].Replace(StringLiterals.AlternatePathSeparator,
-                                                   StringLiterals.DefaultPathSeparator);
-                            _file = Path.GetFullPath(_file);
-                        }
-                        catch (Exception e)
-                        {
-                            // Catch all exceptions - we're just going to exit anyway so there's
-                            // no issue of the system being destabilized.
-                            exceptionMessage = e.Message;
-                        }
-
-                        if (exceptionMessage != null)
-                        {
-                            WriteCommandLineError(
-                                string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.InvalidFileArgument, args[i], exceptionMessage),
-                                showBanner: true);
-                            break;
-                        }
-
-                        if (!Path.GetExtension(_file).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
-                        {
-                            WriteCommandLineError(
-                                string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.InvalidFileArgumentExtension, args[i]),
-                                showBanner: true);
-                            break;
-                        }
-
-                        if (!System.IO.File.Exists(_file))
-                        {
-                            WriteCommandLineError(
-                                string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.ArgumentFileDoesNotExist, args[i]),
-                                showBanner: true);
-                            break;
-                        }
-
-                        i++;
-
-                        Regex argPattern = new Regex(@"^.\w+\:", RegexOptions.CultureInvariant);
-                        string pendingParameter = null;
-
-                        // Accumulate the arguments to this script...
-                        while (i < args.Length)
-                        {
-                            string arg = args[i];
-
-                            // If there was a pending parameter, add a named parameter
-                            // using the pending parameter and current argument
-                            if (pendingParameter != null)
-                            {
-                                _collectedArgs.Add(new CommandParameter(pendingParameter, arg));
-                                pendingParameter = null;
-                            }
-                            else if (!string.IsNullOrEmpty(arg) && SpecialCharacters.IsDash(arg[0]))
-                            {
-                                Match m = argPattern.Match(arg);
-                                if (m.Success)
-                                {
-                                    int offset = arg.IndexOf(':');
-                                    if (offset == arg.Length - 1)
-                                    {
-                                        pendingParameter = arg.TrimEnd(':');
-                                    }
-                                    else
-                                    {
-                                        _collectedArgs.Add(new CommandParameter(arg.Substring(0, offset), arg.Substring(offset + 1)));
-                                    }
-                                }
-                                else
-                                {
-                                    _collectedArgs.Add(new CommandParameter(arg));
-                                }
-                            }
-                            else
-                            {
-                                _collectedArgs.Add(new CommandParameter(null, arg));
-                            }
-                            ++i;
-                        }
-                    }
-                    break;
                 }
 #if DEBUG
                 // this option is useful when debugging ConsoleHost remotely using VS remote debugging, as you can only
@@ -773,7 +659,7 @@ namespace Microsoft.PowerShell
                         WriteCommandLineError(
                             "The -module option can only be specified with the -iss option.",
                             showHelp: true,
-                            showBanner: true);
+                            showBanner: false);
                         break;
                     }
 
@@ -828,7 +714,38 @@ namespace Microsoft.PowerShell
                         break;
                     }
                 }
-#if !CORECLR  // explicit setting of the ApartmentState Not supported on NanoServer
+
+                else if (MatchSwitch(switchKey, "settingsfile", "settings") )
+                {
+                    ++i;
+                    if (i >= args.Length)
+                    {
+                        WriteCommandLineError(
+                            CommandLineParameterParserStrings.MissingSettingsFileArgument);
+                        break;
+                    }
+                    string configFile = null;
+                    try
+                    {
+                        configFile = NormalizeFilePath(args[i]);
+                    }
+                    catch (Exception ex)
+                    {
+                        string error = string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.InvalidSettingsFileArgument, args[i], ex.Message);
+                        WriteCommandLineError(error);
+                        break;
+                    }
+
+                    if (!System.IO.File.Exists(configFile))
+                    {
+                        string error = string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.SettingsFileNotExists, configFile);
+                        WriteCommandLineError(error);
+                        break;
+                    }
+                    PowerShellConfig.Instance.SetSystemConfigFilePath(configFile);
+                }
+#if STAMODE
+                // explicit setting of the ApartmentState Not supported on NanoServer
                 else if (MatchSwitch(switchKey, "sta", "s"))
                 {
                     if (_staMode.HasValue)
@@ -856,12 +773,24 @@ namespace Microsoft.PowerShell
                     _staMode = false;
                 }
 #endif
+                else if (MatchSwitch(switchKey, "workingdirectory", "wo") || MatchSwitch(switchKey, "wd", "wd"))
+                {
+                    ++i;
+                    if (i >= args.Length)
+                    {
+                        WriteCommandLineError(
+                            CommandLineParameterParserStrings.MissingWorkingDirectoryArgument);
+                        break;
+                    }
+
+                    _workingDirectory = args[i];
+                }
                 else
                 {
-                    // The first parameter we fail to recognize marks the beginning of the command string.
+                    // The first parameter we fail to recognize marks the beginning of the file string.
 
                     --i;
-                    if (!ParseCommand(args, ref i, noexitSeen, false))
+                    if (!ParseFile(args, ref i, noexitSeen))
                     {
                         break;
                     }
@@ -965,6 +894,172 @@ namespace Microsoft.PowerShell
             }
 
             executionPolicy = args[i];
+        }
+
+        private static string NormalizeFilePath(string path)
+        {
+            // Normalize slashes
+            path = path.Replace(StringLiterals.AlternatePathSeparator,
+                                StringLiterals.DefaultPathSeparator);
+
+            return Path.GetFullPath(path);
+        }
+
+        private bool ParseFile(string[] args, ref int i, bool noexitSeen)
+        {
+            // Process file execution. We don't need to worry about checking -command
+            // since if -command comes before -file, -file will be treated as part
+            // of the script to evaluate. If -file comes before -command, it will
+            // treat -command as an argument to the script...
+
+            bool TryGetBoolValue(string arg, out bool boolValue)
+            {
+                if (arg.Equals("$true", StringComparison.OrdinalIgnoreCase) || arg.Equals("true", StringComparison.OrdinalIgnoreCase))
+                {
+                    boolValue = true;
+                    return true;
+                }
+                else if (arg.Equals("$false", StringComparison.OrdinalIgnoreCase) || arg.Equals("false", StringComparison.OrdinalIgnoreCase))
+                {
+                    boolValue = false;
+                    return true;
+                }
+                boolValue = false;
+                return false;
+            }
+
+            ++i;
+            if (i >= args.Length)
+            {
+                WriteCommandLineError(
+                    CommandLineParameterParserStrings.MissingFileArgument,
+                    showHelp: true,
+                    showBanner: false);
+                return false;
+            }
+
+            // Don't show the startup banner unless -noexit has been specified.
+            if (!noexitSeen)
+                _showBanner = false;
+
+            // Process interactive input...
+            if (args[i] == "-")
+            {
+                // the arg to -file is -, which is secret code for "read the commands from stdin with prompts"
+
+                _explicitReadCommandsFromStdin = true;
+                _noPrompt = false;
+            }
+            else
+            {
+                // Exit on script completion unless -noexit was specified...
+                if (!noexitSeen)
+                    _noExit = false;
+
+                // We need to get the full path to the script because it will be
+                // executed after the profiles are run and they may change the current
+                // directory.
+                string exceptionMessage = null;
+                try
+                {
+                    _file = NormalizeFilePath(args[i]);
+                }
+                catch (Exception e)
+                {
+                    // Catch all exceptions - we're just going to exit anyway so there's
+                    // no issue of the system being destabilized.
+                    exceptionMessage = e.Message;
+                }
+
+                if (exceptionMessage != null)
+                {
+                    WriteCommandLineError(
+                        string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.InvalidFileArgument, args[i], exceptionMessage),
+                        showBanner: false);
+                    return false;
+                }
+
+                if (!System.IO.File.Exists(_file))
+                {
+                    if (args[i].StartsWith("-") && args[i].Length > 1)
+                    {
+                        string param = args[i].Substring(1, args[i].Length - 1).ToLower();
+                        StringBuilder possibleParameters = new StringBuilder();
+                        foreach (string validParameter in validParameters)
+                        {
+                            if (validParameter.Contains(param))
+                            {
+                                possibleParameters.Append("\n  -");
+                                possibleParameters.Append(validParameter);
+                            }
+                        }
+                        if (possibleParameters.Length > 0)
+                        {
+                            WriteCommandLineError(
+                                string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.InvalidArgument, args[i]),
+                                showBanner: false);
+                            WriteCommandLineError(possibleParameters.ToString(), showBanner: false);
+                            return false;
+                        }
+                    }
+                    WriteCommandLineError(
+                        string.Format(CultureInfo.CurrentCulture, CommandLineParameterParserStrings.ArgumentFileDoesNotExist, args[i]),
+                        showHelp: true);
+                    return false;
+                }
+
+                i++;
+
+                string pendingParameter = null;
+
+                // Accumulate the arguments to this script...
+                while (i < args.Length)
+                {
+                    string arg = args[i];
+
+                    // If there was a pending parameter, add a named parameter
+                    // using the pending parameter and current argument
+                    if (pendingParameter != null)
+                    {
+                        _collectedArgs.Add(new CommandParameter(pendingParameter, arg));
+                        pendingParameter = null;
+                    }
+                    else if (!string.IsNullOrEmpty(arg) && SpecialCharacters.IsDash(arg[0]))
+                    {
+                        int offset = arg.IndexOf(':');
+                        if (offset >= 0)
+                        {
+                            if (offset == arg.Length - 1)
+                            {
+                                pendingParameter = arg.TrimEnd(':');
+                            }
+                            else
+                            {
+                                string argValue = arg.Substring(offset + 1);
+                                string argName = arg.Substring(0, offset);
+                                if (TryGetBoolValue(argValue, out bool boolValue))
+                                {
+                                    _collectedArgs.Add(new CommandParameter(argName, boolValue));
+                                }
+                                else
+                                {
+                                    _collectedArgs.Add(new CommandParameter(argName, argValue));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            _collectedArgs.Add(new CommandParameter(arg));
+                        }
+                    }
+                    else
+                    {
+                        _collectedArgs.Add(new CommandParameter(null, arg));
+                    }
+                    ++i;
+                }
+            }
+            return true;
         }
 
         private bool ParseCommand(string[] args, ref int i, bool noexitSeen, bool isEncoded)
@@ -1118,12 +1213,14 @@ namespace Microsoft.PowerShell
         private string _configurationName;
         private PSHostUserInterface _hostUI;
         private bool _showHelp;
+        private bool _showExtendedHelp;
         private bool _showBanner = true;
         private bool _noInteractive;
         private string _bannerText;
         private string _helpText;
         private bool _abortStartup;
         private bool _skipUserInit;
+#if STAMODE
         // Win8: 182409 PowerShell 3.0 should run in STA mode by default
         // -sta and -mta are mutually exclusive..so tracking them using nullable boolean
         // if true, then sta is specified on the command line.
@@ -1131,6 +1228,7 @@ namespace Microsoft.PowerShell
         // if null, then none is specified on the command line..use default in this case
         // default is sta.
         private bool? _staMode = null;
+#endif
         private bool _noExit = true;
         private bool _explicitReadCommandsFromStdin;
         private bool _noPrompt;
@@ -1143,7 +1241,7 @@ namespace Microsoft.PowerShell
         private Collection<CommandParameter> _collectedArgs = new Collection<CommandParameter>();
         private string _file;
         private string _executionPolicy;
-        private bool _importSystemModules = false;
+        private string _workingDirectory;
     }
 }   // namespace
 

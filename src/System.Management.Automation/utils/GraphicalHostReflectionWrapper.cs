@@ -1,10 +1,5 @@
-﻿//-----------------------------------------------------------------------
-//     Copyright (c) Microsoft Corporation.  All rights reserved.
-// </copyright>
-// <summary>
-// Implements GraphicalHostReflectionWrapper
-// </summary>
-//-----------------------------------------------------------------------
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 namespace System.Management.Automation.Internal
 {
@@ -26,7 +21,7 @@ namespace System.Management.Automation.Internal
     internal class GraphicalHostReflectionWrapper
     {
         /// <summary>
-        /// Initialized in GetGraphicalHostReflectionWrapper with the  Microsoft.PowerShell.GraphicalHost.dll assembly.
+        /// Initialized in GetGraphicalHostReflectionWrapper with the Microsoft.PowerShell.GraphicalHost.dll assembly.
         /// </summary>
         private Assembly _graphicalHostAssembly;
 

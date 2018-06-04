@@ -1,6 +1,6 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #pragma warning disable 1634, 1691
 
 using System.Diagnostics;
@@ -102,7 +102,6 @@ namespace System.Management.Automation
         }
     }
 
-
     /// <summary>
     /// An output object from the child process.
     /// If it's from the error stream isError will be true
@@ -185,6 +184,8 @@ namespace System.Management.Automation
 
             //Create input writer for providing input to the process.
             _inputWriter = new ProcessInputWriter(Command);
+
+            _isTranscribing = this.Command.Context.EngineHostInterface.UI.IsTranscribing;
         }
 
         /// <summary>
@@ -304,7 +305,16 @@ namespace System.Management.Automation
                 this.NativeParameterBinderController.BindParameters(arguments);
             }
 
-            InitNativeProcess();
+            try
+            {
+                InitNativeProcess();
+            }
+            catch (Exception)
+            {
+                // Do cleanup in case of exception
+                CleanUp();
+                throw;
+            }
         }
 
         /// <summary>
@@ -312,12 +322,21 @@ namespace System.Management.Automation
         /// </summary>
         internal override void ProcessRecord()
         {
-            while (Read())
+            try
             {
-                _inputWriter.Add(Command.CurrentPipelineObject);
-            }
+                while (Read())
+                {
+                    _inputWriter.Add(Command.CurrentPipelineObject);
+                }
 
-            ConsumeAvailableNativeProcessOutput(blocking: false);
+                ConsumeAvailableNativeProcessOutput(blocking: false);
+            }
+            catch (Exception)
+            {
+                // Do cleanup in case of exception
+                CleanUp();
+                throw;
+            }
         }
 
         /// <summary>
@@ -343,14 +362,20 @@ namespace System.Management.Automation
         private bool _isRunningInBackground;
 
         /// <summary>
+        /// Indicate if we have called 'NotifyBeginApplication()' on the host, so that
+        /// we can call the counterpart 'NotifyEndApplication' as approriate.
+        /// </summary>
+        private bool _hasNotifiedBeginApplication;
+
+        /// <summary>
         /// This output queue helps us keep the output and error (if redirected) order correct.
         /// We could do a blocking read in the Complete block instead,
         /// but then we would not be able to restore the order reasonable.
         /// </summary>
         private BlockingCollection<ProcessOutputObject> _nativeProcessOutputQueue;
 
-        private bool _scrapeHostOutput;
-
+        private static bool? s_supportScreenScrape = null;
+        private bool _isTranscribing;
         private Host.Coordinates _startPosition;
 
         /// <summary>
@@ -374,10 +399,12 @@ namespace System.Management.Automation
             // redirecting anything. This is a bit tricky as we always run redirected so
             // we have to see if the redirection is actually being done at the topmost level or not.
 
-            //Calculate if input and output are redirected.
+            // Calculate if input and output are redirected.
             bool redirectOutput;
             bool redirectError;
             bool redirectInput;
+
+            _startPosition = new Host.Coordinates();
 
             CalculateIORedirection(out redirectOutput, out redirectError, out redirectInput);
 
@@ -392,34 +419,23 @@ namespace System.Management.Automation
                 throw new PipelineStoppedException();
             }
 
-            _startPosition = new Host.Coordinates();
-            _scrapeHostOutput = false;
-
             Exception exceptionToRethrow = null;
             try
             {
                 // If this process is being run standalone, tell the host, which might want
                 // to save off the window title or other such state as might be tweaked by
                 // the native process
-                if (!redirectOutput)
+                if (_runStandAlone)
                 {
                     this.Command.Context.EngineHostInterface.NotifyBeginApplication();
+                    _hasNotifiedBeginApplication = true;
 
                     // Also, store the Raw UI coordinates so that we can scrape the screen after
                     // if we are transcribing.
-                    try
+                    if (_isTranscribing && (true == s_supportScreenScrape))
                     {
-                        if (this.Command.Context.EngineHostInterface.UI.IsTranscribing)
-                        {
-                            _scrapeHostOutput = true;
-                            _startPosition = this.Command.Context.EngineHostInterface.UI.RawUI.CursorPosition;
-                            _startPosition.X = 0;
-                        }
-                    }
-                    catch (Host.HostException)
-                    {
-                        // The host doesn't support scraping via its RawUI interface
-                        _scrapeHostOutput = false;
+                        _startPosition = this.Command.Context.EngineHostInterface.UI.RawUI.CursorPosition;
+                        _startPosition.X = 0;
                     }
                 }
 
@@ -436,21 +452,28 @@ namespace System.Management.Automation
                         throw new PipelineStoppedException();
                     }
 
+                    if (!Platform.IsWindows && startInfo.UseShellExecute)
+                    {
+                        // UseShellExecute is not properly supported on Unix. It runs the file with '/bin/sh'.
+                        // Before the behavior is improved (tracked by dotnet/corefx#19956), we use xdg-open/open as the default programs
+                        string executable = Platform.IsLinux ? "xdg-open" : /* macOS */ "open";
+                        startInfo.Arguments = "\"" + startInfo.FileName + "\" " + startInfo.Arguments;
+                        startInfo.FileName = executable;
+                        startInfo.UseShellExecute = false;
+                    }
+
                     try
                     {
-                        _nativeProcess = new Process();
-                        _nativeProcess.StartInfo = startInfo;
+                        _nativeProcess = new Process() { StartInfo = startInfo };
                         _nativeProcess.Start();
                     }
                     catch (Win32Exception)
                     {
-#if CORECLR             // Shell doesn't exist on OneCore, so a file cannot be associated with an executable,
-                        // and we cannot run an executable as 'ShellExecute' either.
-                        throw;
-#else
-                        // See if there is a file association for this command. If so
-                        // then we'll use that. If there's no file association, then
-                        // try shell execute...
+                        // On Unix platforms, nothing can be further done, so just throw
+                        // On headless Windows SKUs, there is no shell to fall back to, so just throw
+                        if (!Platform.IsWindowsDesktop) { throw; }
+
+                        // on Windows desktops, see if there is a file association for this command. If so then we'll use that.
                         string executable = FindExecutable(startInfo.FileName);
                         bool notDone = true;
                         if (!String.IsNullOrEmpty(executable))
@@ -495,7 +518,6 @@ namespace System.Management.Automation
                                 throw;
                             }
                         }
-#endif
                     }
                 }
 
@@ -666,9 +688,8 @@ namespace System.Management.Automation
                     ConsumeAvailableNativeProcessOutput(blocking: true);
                     _nativeProcess.WaitForExit();
 
-                    // Capture screen output if we are transcribing
-                    if (this.Command.Context.EngineHostInterface.UI.IsTranscribing &&
-                        _scrapeHostOutput)
+                    // Capture screen output if we are transcribing and running stand alone
+                    if (_isTranscribing && (true == s_supportScreenScrape) && _runStandAlone)
                     {
                         Host.Coordinates endPosition = this.Command.Context.EngineHostInterface.UI.RawUI.CursorPosition;
                         endPosition.X = this.Command.Context.EngineHostInterface.UI.RawUI.BufferSize.Width - 1;
@@ -724,11 +745,7 @@ namespace System.Management.Automation
             }
             finally
             {
-                if (!_nativeProcess.StartInfo.RedirectStandardOutput)
-                {
-                    this.Command.Context.EngineHostInterface.NotifyEndApplication();
-                }
-                // Do the clean up...
+                // Do some cleanup
                 CleanUp();
             }
 
@@ -748,7 +765,6 @@ namespace System.Management.Automation
                 throw appFailedException;
             }
         }
-
 
         #region Process cleanup with Child Process cleanup
 
@@ -931,11 +947,7 @@ namespace System.Management.Automation
         [ArchitectureSensitive]
         private static bool IsWindowsApplication(string fileName)
         {
-#if UNIX
-            return false;
-#else
-            if (Platform.IsNanoServer)
-                return false;
+            if (!Platform.IsWindowsDesktop) { return false; }
 
             SHFILEINFO shinfo = new SHFILEINFO();
             IntPtr type = SHGetFileInfo(fileName, 0, ref shinfo, (uint)Marshal.SizeOf(shinfo), SHGFI_EXETYPE);
@@ -955,7 +967,6 @@ namespace System.Management.Automation
                     // anything else - is a windows program...
                     return true;
             }
-#endif
         }
 
         #endregion checkForConsoleApplication
@@ -994,8 +1005,15 @@ namespace System.Management.Automation
         /// </summary>
         private void CleanUp()
         {
+            // We need to call 'NotifyEndApplication' as appropriate during cleanup
+            if (_hasNotifiedBeginApplication)
+            {
+                this.Command.Context.EngineHostInterface.NotifyEndApplication();
+            }
+
             try
             {
+                // Dispose the process if it's already created
                 if (_nativeProcess != null)
                 {
                     _nativeProcess.Dispose();
@@ -1104,11 +1122,14 @@ namespace System.Management.Automation
             }
             else
             {
-#if CORECLR     // Shell doesn't exist on OneCore, so documents cannot be associated with an application.
-                // Therefore, we cannot run document directly on OneCore.
-                throw InterpreterError.NewInterpreterException(this.Path, typeof(RuntimeException),
-                    this.Command.InvocationExtent, "CantActivateDocumentInPowerShellCore", ParserStrings.CantActivateDocumentInPowerShellCore, this.Path);
-#else
+                if (Platform.IsNanoServer || Platform.IsIoT)
+                {
+                    // Shell doesn't exist on headless SKUs, so documents cannot be associated with an application.
+                    // Therefore, we cannot run document in this case.
+                    throw InterpreterError.NewInterpreterException(this.Path, typeof(RuntimeException),
+                        this.Command.InvocationExtent, "CantActivateDocumentInPowerShellCore", ParserStrings.CantActivateDocumentInPowerShellCore, this.Path);
+                }
+
                 // We only want to ShellExecute something that is standalone...
                 if (!soloCommand)
                 {
@@ -1117,7 +1138,6 @@ namespace System.Management.Automation
                 }
 
                 startInfo.UseShellExecute = true;
-#endif
             }
 
             //For minishell value of -outoutFormat parameter depends on value of redirectOutput.
@@ -1176,7 +1196,6 @@ namespace System.Management.Automation
             redirectOutput = true;
             redirectError = true;
 
-
             // Figure out if we're going to run this process "standalone" i.e. without
             // redirecting anything. This is a bit tricky as we always run redirected so
             // we have to see if the redirection is actually being done at the topmost level or not.
@@ -1201,7 +1220,6 @@ namespace System.Management.Automation
                     redirectOutput = false;
                 }
             }
-
 
             // See if the error output stream has been redirected, either through an explicit 2> foo.txt or
             // my merging error into output through 2>&1.
@@ -1243,11 +1261,10 @@ namespace System.Management.Automation
                 redirectOutput = true;
                 redirectError = true;
             }
-#if !CORECLR // UI doesn't exist on OneCore, so all applications running on an OneCore client should be console applications.
-            // The powershell on the OneCore client should already have a console attached.
-            else if (IsConsoleApplication(this.Path))
+            else if (Platform.IsWindowsDesktop && IsConsoleApplication(this.Path))
             {
-                // Allocate a console if there isn't one attached already...
+                // On Windows desktops, if the command to run is a console application,
+                // then allocate a console if there isn't one attached already...
                 ConsoleVisibility.AllocateHiddenConsole();
 
                 if (ConsoleVisibility.AlwaysCaptureApplicationIO)
@@ -1256,9 +1273,35 @@ namespace System.Management.Automation
                     redirectError = true;
                 }
             }
-#endif
-            if (!(redirectInput || redirectOutput))
-                _runStandAlone = true;
+
+            _runStandAlone = !redirectInput && !redirectOutput && !redirectError;
+
+            if (_runStandAlone)
+            {
+                if (null == s_supportScreenScrape)
+                {
+                    try
+                    {
+                        _startPosition = this.Command.Context.EngineHostInterface.UI.RawUI.CursorPosition;
+                        Host.BufferCell[,] bufferContents = this.Command.Context.EngineHostInterface.UI.RawUI.GetBufferContents(
+                            new Host.Rectangle(_startPosition, _startPosition));
+                        s_supportScreenScrape = true;
+                    }
+                    catch (Exception)
+                    {
+                        s_supportScreenScrape = false;
+                    }
+                }
+
+                // if screen scraping isn't supported, we enable redirection so that the output is still transcribed
+                // as redirected output is always transcribed
+                if (_isTranscribing && (false == s_supportScreenScrape))
+                {
+                    redirectOutput = true;
+                    redirectError = true;
+                    _runStandAlone = false;
+                }
+            }
         }
 
         private bool ValidateExtension(string path)
@@ -1288,7 +1331,6 @@ namespace System.Management.Automation
             return false;
         }
 
-#if !UNIX // Shell doesn't exist on OneCore, so documents cannot be associated with applications.
         #region Interop for FindExecutable...
 
         // Constant used to determine the buffer size for a path
@@ -1368,7 +1410,6 @@ namespace System.Management.Automation
             ref SHFILEINFO psfi, uint cbSizeFileInfo, uint uFlags);
 
         #endregion
-#endif
 
         #region Minishell Interop
 
@@ -1754,7 +1795,7 @@ namespace System.Management.Automation
             //from the current scope so a script or function can use a different encoding
             //than global value.
             Encoding pipeEncoding = _command.Context.GetVariableValue(SpecialVariables.OutputEncodingVarPath) as System.Text.Encoding ??
-                                    Encoding.ASCII;
+                                    Utils.utf8NoBom;
 
             _streamWriter = new StreamWriter(process.StandardInput.BaseStream, pipeEncoding);
             _streamWriter.AutoFlush = true;
@@ -1843,8 +1884,6 @@ namespace System.Management.Automation
         }
     }
 
-#if !CORECLR // There is no GUI application on OneCore, so powershell on OneCore should always have a console attached.
-
     /// <summary>
     /// Static class that allows you to show and hide the console window
     /// associated with this process.
@@ -1890,7 +1929,6 @@ namespace System.Management.Automation
         /// <returns>true if a console was created...</returns>
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool AllocConsole();
-
 
         /// <summary>
         /// Called to save the foreground window before allocating a hidden console window
@@ -1989,7 +2027,6 @@ namespace System.Management.Automation
             }
         }
     }
-#endif
 
     /// <summary>
     /// Exception used to wrap the error coming from
@@ -2061,7 +2098,6 @@ namespace System.Management.Automation
             _serializedRemoteException = serializedRemoteException;
             _serializedRemoteInvocationInfo = serializedRemoteInvocationInfo;
         }
-
 
         #region ISerializable Members
 

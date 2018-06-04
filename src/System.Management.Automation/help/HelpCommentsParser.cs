@@ -1,6 +1,5 @@
-/********************************************************************++
-Copyright (c) Microsoft Corporation.  All rights reserved.
---********************************************************************/
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 using System.IO;
 using System.Collections;
@@ -154,10 +153,9 @@ namespace System.Management.Automation
             if (type == null)
                 type = typeof(object);
 
-            var typeInfo = type.GetTypeInfo();
-            var elementType = typeInfo.IsArray ? typeInfo.GetElementType() : type;
+            var elementType = type.IsArray ? type.GetElementType() : type;
 
-            if (elementType.GetTypeInfo().IsEnum)
+            if (elementType.IsEnum)
             {
                 XmlElement parameterValueGroup = _doc.CreateElement("command:parameterValueGroup", commandURI);
                 foreach (string valueName in Enum.GetNames(elementType))
@@ -354,7 +352,7 @@ namespace System.Management.Automation
                     // The title is automatically generated
                     XmlElement title = _doc.CreateElement("maml:title", mamlURI);
                     string titleStr = string.Format(CultureInfo.InvariantCulture,
-                        "				-------------------------- {0} {1} --------------------------",
+                        "\t\t\t\t-------------------------- {0} {1} --------------------------",
                         HelpDisplayStrings.ExampleUpperCase, count++);
                     XmlText title_text = _doc.CreateTextNode(titleStr);
                     example_node.AppendChild(title).AppendChild(title_text);
@@ -907,25 +905,8 @@ namespace System.Management.Automation
                                                              HelpCategory.ExternalScript |
                                                              HelpCategory.Filter |
                                                              HelpCategory.Function |
-                                                             HelpCategory.ScriptCommand |
-                                                             HelpCategory.Workflow);
+                                                             HelpCategory.ScriptCommand);
                     }
-                }
-
-                WorkflowInfo workflowInfo = commandInfo as WorkflowInfo;
-                if (workflowInfo != null)
-                {
-                    bool common = DefaultCommandHelpObjectBuilder.HasCommonParameters(commandInfo.Parameters);
-                    bool commonWorkflow = ((commandInfo.CommandType & CommandTypes.Workflow) ==
-                                           CommandTypes.Workflow);
-
-                    localHelpInfo.FullHelp.Properties.Add(new PSNoteProperty("CommonParameters", common));
-                    localHelpInfo.FullHelp.Properties.Add(new PSNoteProperty("WorkflowCommonParameters", commonWorkflow));
-                    DefaultCommandHelpObjectBuilder.AddDetailsProperties(obj: localHelpInfo.FullHelp, name: workflowInfo.Name,
-                                                                        noun: workflowInfo.Noun, verb: workflowInfo.Verb,
-                                                                        typeNameForHelp: "MamlCommandHelpInfo", synopsis: localHelpInfo.Synopsis);
-                    DefaultCommandHelpObjectBuilder.AddSyntaxProperties(localHelpInfo.FullHelp, workflowInfo.Name,
-                                                                        workflowInfo.ParameterSets, common, commonWorkflow, "MamlCommandHelpInfo");
                 }
 
                 // Add HelpUri if necessary
@@ -1087,7 +1068,6 @@ namespace System.Management.Automation
                         CollectCommentText(comment, commentLines);
                     }
                 }
-
 
                 int n = -1;
                 result.Add(GetSection(commentLines, ref n));
